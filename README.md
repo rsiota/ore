@@ -12,11 +12,11 @@ go run ./cmd/ore /path/to/repo
 go run ./cmd/ore -C /path/to/repo
 ```
 
-**Keys (Wave 1):** `j`/`k` move · `Enter`/`l` open (commit→files→history) · `esc` back · `Tab` focus detail · `g`/`G` top/bottom · `Ctrl+D`/`Ctrl+U` page · `?` hint · `q` quit
+**Keys (Wave 2):** `Enter`/`l` open · `b` blame · `f`/`g f` follow line · `esc` back · `Tab` detail · `j`/`k` · `q`
 
 ## Status
 
-Wave 1: commit grid → file list → path history (`--follow`), with path-scoped detail. See [ROADMAP.md](ROADMAP.md).
+Wave 2 started: blame grid with age washes and line follow. See [ROADMAP.md](ROADMAP.md).
 
 ## Stack
 

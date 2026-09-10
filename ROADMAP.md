@@ -65,7 +65,7 @@ Files: `cmd/ore`, `internal/git`, `internal/ui`, `internal/config`, `internal/ve
 - [x] `esc` / `backspace` to walk back files → commits
 - [ ] Ex commands: `:history`, `:open`
 
-### Wave 2 — Blame / archaeology grid
+### Wave 2 — Blame / archaeology grid ✅ (started)
 
 **Goal:** lines as first-class rows — the distinctive mode.
 
@@ -73,10 +73,12 @@ Files: `cmd/ore`, `internal/git`, `internal/ui`, `internal/config`, `internal/ve
 |------|--------------|--------|---------|---------|
 | 42   | 3d a1b2      | alice  | `if err := …` | Refactor auth… |
 
-- [ ] `:blame path` / blame at revision
-- [ ] Age / author colouring
-- [ ] Cursor → detail shows commit + surrounding diff + mini line timeline
-- [ ] `g f` / `g r` follow line backward (then forward)
+- [x] Blame grid from file (`b`) or history (`b` / Enter)
+- [x] Soft age washes + relative age column
+- [x] Cursor → detail shows commit that last touched the line (path-scoped)
+- [x] `f` / `g f` follow line backward via porcelain `previous`
+- [ ] `:blame path` ex-command
+- [ ] Author colouring / mini line timeline
 - [ ] Collapse/expand logical blocks (later)
 
 ### Wave 3 — Relationship explorer (`g r`)

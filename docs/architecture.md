@@ -22,4 +22,4 @@ internal/version/  ldflags version string
 - Domain boundary mirrors creel’s `internal/db`: UI talks to `*git.Repo`, never shells out itself.
 - Prefer copying creel interaction patterns (registry, palette, session, themes) over a shared module until a second product proves the abstraction.
 - Read-only product surface; do not grow write-path features in early waves.
-- Navigation stack: **commits → files → history** (`Enter`/`l` forward, `esc` back). History uses `git log --follow`; detail uses `Show` or path-scoped `ShowPath`.
+- Navigation stack: **commits → files → history → blame** (`Enter`/`l` / `b` forward, `esc` back). History uses `git log --follow`; blame uses `git blame --porcelain`; detail uses `Show` / `ShowPath`. Line follow (`f` / `g f`) reloads blame at porcelain `previous`.

@@ -28,6 +28,7 @@ const (
 	MainCommits MainView = iota
 	MainFiles
 	MainHistory
+	MainBlame
 )
 
 // Model is the root TUI state.
@@ -43,10 +44,10 @@ type Model struct {
 	cursor       int
 	commitOffset int
 
-	files           []git.FileChange
-	fileCursor      int
-	fileOffset      int
-	filesCommitHash string
+	files            []git.FileChange
+	fileCursor       int
+	fileOffset       int
+	filesCommitHash  string
 	openFilesPending bool
 
 	historyPath    string
@@ -54,6 +55,16 @@ type Model struct {
 	historyCursor  int
 	historyOffset  int
 	loadingHistory bool
+
+	blame          []git.BlameLine
+	blamePath      string
+	blameRev       string
+	blameCursor    int
+	blameOffset    int
+	blameFrom      MainView // MainFiles or MainHistory
+	blamePreferLine int
+	loadingBlame   bool
+	chordG         bool // pending g-prefix for gg / gf in blame
 
 	detail           *git.CommitDetail
 	detailFilterPath string // path passed to Show/ShowPath for stale checks
@@ -98,6 +109,13 @@ type historyLoadedMsg struct {
 	err     error
 }
 
+type blameLoadedMsg struct {
+	path    string
+	rev     string
+	lines   []git.BlameLine
+	err     error
+}
+
 func loadCommitsCmd(repo *git.Repo) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -135,6 +153,15 @@ func loadHistoryCmd(repo *git.Repo, path string) tea.Cmd {
 		defer cancel()
 		commits, err := repo.FileHistory(ctx, path, git.LogOptions{})
 		return historyLoadedMsg{path: path, commits: commits, err: err}
+	}
+}
+
+func loadBlameCmd(repo *git.Repo, path, rev string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		lines, err := repo.Blame(ctx, path, git.BlameOptions{Rev: rev})
+		return blameLoadedMsg{path: path, rev: rev, lines: lines, err: err}
 	}
 }
 
@@ -206,8 +233,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.historyOffset = 0
 		m.main = MainHistory
 		m.focus = FocusMain
-		m.status = fmt.Sprintf("history · %s · %d commits", m.historyPath, len(m.history))
+		m.status = fmt.Sprintf("history · %s · %d commits · b/enter blame", m.historyPath, len(m.history))
 		if len(m.history) > 0 {
+			return m, m.reloadDetail()
+		}
+		m.detail = nil
+		return m, nil
+
+	case blameLoadedMsg:
+		m.loadingBlame = false
+		if msg.path != m.blamePath || msg.rev != m.blameRev {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.status = "error"
+			return m, nil
+		}
+		m.blame = msg.lines
+		m.blameCursor = 0
+		m.blameOffset = 0
+		if m.blamePreferLine > 0 {
+			for i, bl := range m.blame {
+				if bl.Line >= m.blamePreferLine {
+					m.blameCursor = i
+					break
+				}
+				m.blameCursor = i
+			}
+			m.blamePreferLine = 0
+			m.ensureBlameVisible()
+		}
+		m.main = MainBlame
+		m.focus = FocusMain
+		m.chordG = false
+		m.status = fmt.Sprintf("blame · %s @ %s · %d lines · f follow · esc back",
+			m.blamePath, shortHash(m.blameRev), len(m.blame))
+		if len(m.blame) > 0 {
 			return m, m.reloadDetail()
 		}
 		m.detail = nil
@@ -221,11 +283,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) selectedHash() string {
 	switch m.main {
+	case MainBlame:
+		if len(m.blame) == 0 {
+			return ""
+		}
+		return m.blame[m.blameCursor].Hash
 	case MainHistory:
 		if len(m.history) == 0 {
 			return ""
 		}
 		return m.history[m.historyCursor].Hash
+	case MainFiles:
+		return m.filesCommitHash
 	default:
 		if len(m.commits) == 0 {
 			return ""
@@ -239,6 +308,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	case "tab":
+		m.chordG = false
 		if m.focus == FocusMain {
 			m.focus = FocusDetail
 		} else {
@@ -246,9 +316,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "esc", "backspace":
+		m.chordG = false
 		return m.goBack()
 	case "?":
-		m.status = "enter open · esc back · j/k move · tab focus · q quit"
+		m.chordG = false
+		m.status = "enter open · b blame · f follow line · esc back · j/k · tab · q"
 		return m, nil
 	}
 
@@ -263,6 +335,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) goBack() (tea.Model, tea.Cmd) {
 	switch m.main {
+	case MainBlame:
+		m.blame = nil
+		m.blamePath = ""
+		m.blameRev = ""
+		m.chordG = false
+		m.focus = FocusMain
+		if m.blameFrom == MainHistory && m.historyPath != "" {
+			m.main = MainHistory
+			m.status = fmt.Sprintf("history · %s · %d commits", m.historyPath, len(m.history))
+			return m, m.reloadDetail()
+		}
+		m.main = MainFiles
+		if len(m.files) > 0 {
+			m.status = fmt.Sprintf("%d files in %s", len(m.files), shortHash(m.filesCommitHash))
+			return m, m.reloadDetail()
+		}
+		m.main = MainCommits
+		m.status = fmt.Sprintf("%d commits", len(m.commits))
+		return m, m.reloadDetail()
 	case MainHistory:
 		m.main = MainFiles
 		m.history = nil
@@ -296,6 +387,8 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFileKeys(msg)
 	case MainHistory:
 		return m.handleHistoryKeys(msg)
+	case MainBlame:
+		return m.handleBlameKeys(msg)
 	}
 	return m, nil
 }
@@ -355,7 +448,7 @@ func (m *Model) enterFilesView() {
 	m.fileCursor = 0
 	m.fileOffset = 0
 	m.focus = FocusMain
-	m.status = fmt.Sprintf("%d files in %s · enter history · esc back", len(m.files), m.detail.Commit.ShortHash)
+	m.status = fmt.Sprintf("%d files in %s · enter history · b blame · esc back", len(m.files), m.detail.Commit.ShortHash)
 }
 
 func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -400,6 +493,8 @@ func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.loadingHistory = true
 		m.status = fmt.Sprintf("loading history · %s", path)
 		return m, loadHistoryCmd(m.repo, path)
+	case "b":
+		return m.startBlame(m.files[m.fileCursor].Path, m.filesCommitHash, MainFiles)
 	}
 	return m, nil
 }
@@ -437,8 +532,109 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.historyCursor = max(0, m.historyCursor-m.mainPage())
 		m.ensureHistoryVisible()
 		return m, m.reloadDetail()
+	case "b", "enter", "l":
+		return m.startBlame(m.historyPath, m.history[m.historyCursor].Hash, MainHistory)
 	}
 	return m, nil
+}
+
+func (m Model) startBlame(path, rev string, from MainView) (tea.Model, tea.Cmd) {
+	if path == "" || rev == "" {
+		m.status = "cannot blame: missing path or revision"
+		return m, nil
+	}
+	m.blamePath = path
+	m.blameRev = rev
+	m.blameFrom = from
+	m.blamePreferLine = 0
+	m.loadingBlame = true
+	m.chordG = false
+	m.status = fmt.Sprintf("loading blame · %s @ %s", path, shortHash(rev))
+	return m, loadBlameCmd(m.repo, path, rev)
+}
+
+func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+
+	// g-prefix: gg = top, gf = follow line backward
+	if m.chordG {
+		m.chordG = false
+		switch key {
+		case "g", "home":
+			if len(m.blame) == 0 {
+				return m, nil
+			}
+			m.blameCursor = 0
+			m.ensureBlameVisible()
+			return m, m.reloadDetail()
+		case "f":
+			return m.followBlameLine()
+		default:
+			// fall through and handle key normally
+		}
+	}
+
+	if len(m.blame) == 0 {
+		return m, nil
+	}
+	switch key {
+	case "j", "down":
+		if m.blameCursor < len(m.blame)-1 {
+			m.blameCursor++
+			m.ensureBlameVisible()
+			return m, m.reloadDetail()
+		}
+	case "k", "up":
+		if m.blameCursor > 0 {
+			m.blameCursor--
+			m.ensureBlameVisible()
+			return m, m.reloadDetail()
+		}
+	case "g":
+		m.chordG = true
+		m.status = "g · g top · f follow"
+		return m, nil
+	case "home":
+		m.blameCursor = 0
+		m.ensureBlameVisible()
+		return m, m.reloadDetail()
+	case "G", "end":
+		m.blameCursor = len(m.blame) - 1
+		m.ensureBlameVisible()
+		return m, m.reloadDetail()
+	case "ctrl+d":
+		m.blameCursor = min(len(m.blame)-1, m.blameCursor+m.mainPage())
+		m.ensureBlameVisible()
+		return m, m.reloadDetail()
+	case "ctrl+u":
+		m.blameCursor = max(0, m.blameCursor-m.mainPage())
+		m.ensureBlameVisible()
+		return m, m.reloadDetail()
+	case "f":
+		return m.followBlameLine()
+	}
+	return m, nil
+}
+
+func (m Model) followBlameLine() (tea.Model, tea.Cmd) {
+	if len(m.blame) == 0 {
+		return m, nil
+	}
+	line := m.blame[m.blameCursor]
+	if line.PreviousHash == "" {
+		m.status = "no earlier revision for this line"
+		return m, nil
+	}
+	path := m.blamePath
+	if line.PreviousPath != "" {
+		path = line.PreviousPath
+	}
+	m.blamePath = path
+	m.blameRev = line.PreviousHash
+	m.blamePreferLine = line.Line
+	m.loadingBlame = true
+	m.status = fmt.Sprintf("follow · %s @ %s", path, shortHash(line.PreviousHash))
+	return m, loadBlameCmd(m.repo, path, line.PreviousHash)
 }
 
 func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -480,6 +676,8 @@ func (m *Model) reloadDetail() tea.Cmd {
 		}
 	case MainHistory:
 		path = m.historyPath
+	case MainBlame:
+		path = m.blamePath
 	}
 	m.detailFilterPath = path
 	m.loadingDetail = true
@@ -497,6 +695,10 @@ func (m *Model) ensureFileVisible() {
 
 func (m *Model) ensureHistoryVisible() {
 	ensureVisible(&m.historyOffset, m.historyCursor, m.mainListHeight())
+}
+
+func (m *Model) ensureBlameVisible() {
+	ensureVisible(&m.blameOffset, m.blameCursor, m.mainListHeight())
 }
 
 func ensureVisible(offset *int, cursor, height int) {
@@ -587,7 +789,7 @@ func (m Model) renderTitle() string {
 
 func (m Model) renderStatus() string {
 	msg := m.status
-	busy := m.loading || m.loadingDetail || m.loadingHistory
+	busy := m.loading || m.loadingDetail || m.loadingHistory || m.loadingBlame
 	if m.err != "" {
 		msg = styleErr.Render(m.err)
 	} else if busy {
@@ -620,6 +822,8 @@ func (m Model) renderMainPane(width, height int) string {
 		return m.renderFilesPane(width, height)
 	case MainHistory:
 		return m.renderHistoryPane(width, height)
+	case MainBlame:
+		return m.renderBlamePane(width, height)
 	default:
 		return m.renderCommitPane(width, height)
 	}
@@ -631,6 +835,8 @@ func (m Model) mainTitle() string {
 		return " files"
 	case MainHistory:
 		return " history"
+	case MainBlame:
+		return " blame"
 	default:
 		return " commits"
 	}
@@ -727,6 +933,39 @@ func (m Model) renderHistoryPane(width, height int) string {
 	return padPane(lines, width, height)
 }
 
+func (m Model) renderBlamePane(width, height int) string {
+	title := " blame"
+	if m.blamePath != "" {
+		title = fmt.Sprintf(" blame · %s @ %s", m.blamePath, shortHash(m.blameRev))
+	}
+	lines := m.renderPaneHeader(width, title)
+	lines = append(lines, cell(styleHeader,
+		fmt.Sprintf("%4s %-7s %-10s %-10s %s", "LINE", "COMMIT", "AGE", "AUTHOR", "CODE"),
+		width,
+	))
+
+	h := height - 2
+	if h < 1 {
+		h = 1
+	}
+	newest, oldest := blameAgeRange(m.blame)
+	end := min(len(m.blame), m.blameOffset+h)
+	for i := m.blameOffset; i < end; i++ {
+		row := formatBlameRow(m.blame[i])
+		if i == m.blameCursor {
+			lines = append(lines, cell(styleFocus, row, width))
+		} else {
+			lines = append(lines, cell(blameAgeStyle(m.blame[i].When, newest, oldest), row, width))
+		}
+	}
+	if m.loadingBlame {
+		lines = append(lines, fitWidth(styleMuted.Render(" loading…"), width))
+	} else if len(m.blame) == 0 {
+		lines = append(lines, fitWidth(styleMuted.Render("(no blame)"), width))
+	}
+	return padPane(lines, width, height)
+}
+
 func padPane(lines []string, width, height int) string {
 	for len(lines) < height {
 		lines = append(lines, strings.Repeat(" ", width))
@@ -753,6 +992,77 @@ func formatFileRow(f git.FileChange) string {
 		path = f.OldPath + " → " + f.Path
 	}
 	return fmt.Sprintf("%-4s +%-5d -%-5d %s", st, f.Additions, f.Deletions, path)
+}
+
+func formatBlameRow(b git.BlameLine) string {
+	author := b.Author
+	if runewidth.StringWidth(author) > 10 {
+		author = runewidth.Truncate(author, 10, "…")
+	}
+	age := relativeAge(b.When)
+	code := strings.ReplaceAll(b.Text, "\t", "    ")
+	return fmt.Sprintf("%4d %-7s %-10s %-10s %s", b.Line, b.ShortHash, age, author, code)
+}
+
+func relativeAge(t time.Time) string {
+	if t.IsZero() {
+		return "?"
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Hour:
+		return "just now"
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	case d < 365*24*time.Hour:
+		return fmt.Sprintf("%dmo ago", int(d.Hours()/24/30))
+	default:
+		return fmt.Sprintf("%dy ago", int(d.Hours()/24/365))
+	}
+}
+
+func blameAgeRange(lines []git.BlameLine) (newest, oldest time.Time) {
+	for _, l := range lines {
+		if l.When.IsZero() {
+			continue
+		}
+		if newest.IsZero() || l.When.After(newest) {
+			newest = l.When
+		}
+		if oldest.IsZero() || l.When.Before(oldest) {
+			oldest = l.When
+		}
+	}
+	return newest, oldest
+}
+
+// Soft age washes for light terminals — newer = cooler mint, older = warmer parchment.
+func blameAgeStyle(when, newest, oldest time.Time) lipgloss.Style {
+	if when.IsZero() || newest.IsZero() || oldest.IsZero() || !newest.After(oldest) {
+		return lipgloss.NewStyle()
+	}
+	span := newest.Sub(oldest).Seconds()
+	if span <= 0 {
+		return lipgloss.NewStyle()
+	}
+	// 0 = newest, 1 = oldest
+	t := newest.Sub(when).Seconds() / span
+	if t < 0 {
+		t = 0
+	}
+	if t > 1 {
+		t = 1
+	}
+	switch {
+	case t < 0.33:
+		return lipgloss.NewStyle().Background(lipgloss.Color("#eef6f0")).Foreground(lipgloss.Color("#24292f"))
+	case t < 0.66:
+		return lipgloss.NewStyle().Background(lipgloss.Color("#f6f1e7")).Foreground(lipgloss.Color("#24292f"))
+	default:
+		return lipgloss.NewStyle().Background(lipgloss.Color("#f0e6e4")).Foreground(lipgloss.Color("#24292f"))
+	}
 }
 
 func (m Model) renderDetailPane(width, height int) string {
@@ -784,6 +1094,14 @@ func (m Model) detailLines() []string {
 	}
 	d := m.detail
 	var out []string
+	if m.main == MainBlame && len(m.blame) > 0 {
+		bl := m.blame[m.blameCursor]
+		out = append(out, styleMuted.Render(fmt.Sprintf("line %d · %s", bl.Line, relativeAge(bl.When))))
+		if bl.Summary != "" {
+			out = append(out, styleTitle.Render(bl.Summary))
+		}
+		out = append(out, "")
+	}
 	out = append(out, styleHash.Render(d.Commit.Hash))
 	out = append(out, fmt.Sprintf("%s <%s>", d.Commit.Author, d.Commit.Email))
 	out = append(out, d.Commit.Date.Local().Format(time.RFC1123))
