@@ -294,14 +294,25 @@ func (m Model) View() string {
 }
 
 var (
-	styleTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("180"))
-	styleMuted   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	styleFocus   = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("236"))
-	styleHeader  = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Bold(true)
-	styleAdd     = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
-	styleDel     = lipgloss.NewStyle().Foreground(lipgloss.Color("174"))
-	styleErr     = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	styleHash    = lipgloss.NewStyle().Foreground(lipgloss.Color("110"))
+	styleTitle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("180"))
+	styleMuted  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	styleFocus  = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("236"))
+	styleHeader = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Bold(true)
+	styleErr    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	styleHash   = lipgloss.NewStyle().Foreground(lipgloss.Color("110"))
+
+	// Inline +/− counts: ink only (no wash), tuned for light terminals.
+	styleAdd = lipgloss.NewStyle().Foreground(lipgloss.Color("#1a7f37"))
+	styleDel = lipgloss.NewStyle().Foreground(lipgloss.Color("#cf222e"))
+
+	// Full-line diff wash, close to Cursor / GitHub light: soft green/rose
+	// backgrounds with darker ink instead of saturated green/red text.
+	styleAddWash = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#1a7f37")).
+			Background(lipgloss.Color("#dafbe1"))
+	styleDelWash = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#cf222e")).
+			Background(lipgloss.Color("#ffebe9"))
 )
 
 func (m Model) renderTitle() string {
@@ -401,7 +412,7 @@ func (m Model) renderDetailPane(width, height int) string {
 	}
 	end := min(len(body), m.detailOffset+h)
 	for i := m.detailOffset; i < end; i++ {
-		lines = append(lines, fitWidth(colorDiffLine(body[i]), width))
+		lines = append(lines, renderDetailLine(body[i], width))
 	}
 	for len(lines) < height {
 		lines = append(lines, strings.Repeat(" ", width))
@@ -443,18 +454,19 @@ func (m Model) detailLines() []string {
 	return out
 }
 
-func colorDiffLine(line string) string {
-	// Only colour plain diff text; styled meta lines are left as-is.
+func renderDetailLine(line string, width int) string {
+	// Pre-styled meta (hash, subject, …) — keep as-is, just fit the cell.
 	if strings.Contains(line, "\x1b[") {
-		return line
+		return fitWidth(line, width)
 	}
 	switch {
 	case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
-		return styleAdd.Render(line)
+		// Apply wash via cell() so the background spans the full pane width.
+		return cell(styleAddWash, line, width)
 	case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
-		return styleDel.Render(line)
+		return cell(styleDelWash, line, width)
 	default:
-		return line
+		return fitWidth(line, width)
 	}
 }
 

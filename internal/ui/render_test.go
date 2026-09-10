@@ -5,11 +5,18 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/rsiota/ore/internal/git"
 )
 
+func TestMain(m *testing.M) {
+	// Tests run without a TTY; force TrueColor so wash/ANSI assertions are meaningful.
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	m.Run()
+}
+
 func TestFitWidthPreservesANSIWidth(t *testing.T) {
-	styled := lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Render("+added line that is quite long and should truncate cleanly")
+	styled := lipgloss.NewStyle().Foreground(lipgloss.Color("#1a7f37")).Render("+added line that is quite long and should truncate cleanly")
 	got := fitWidth(styled, 20)
 	if w := lipgloss.Width(got); w != 20 {
 		t.Fatalf("lipgloss.Width = %d, want 20 (got %q)", w, got)
@@ -19,6 +26,20 @@ func TestFitWidthPreservesANSIWidth(t *testing.T) {
 	joined := got + plain
 	if lipgloss.Width(joined) != 40 {
 		t.Fatalf("joined width = %d, want 40", lipgloss.Width(joined))
+	}
+}
+
+func TestDiffWashSpansFullWidth(t *testing.T) {
+	got := renderDetailLine("+added something", 24)
+	if w := lipgloss.Width(got); w != 24 {
+		t.Fatalf("width = %d, want 24", w)
+	}
+	if strings.Contains(got, "\n") {
+		t.Fatalf("wash line wrapped: %q", got)
+	}
+	// Background should be present in the ANSI output for a true wash.
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatal("expected ANSI styling on add wash line")
 	}
 }
 
