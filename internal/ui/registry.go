@@ -21,6 +21,7 @@ func registry() []Section {
 			Title: "Global",
 			Items: []Binding{
 				{"?", []string{"?"}, "toggle help", "?"},
+				{":", []string{":"}, "ex command line", ":"},
 				{"q / ctrl+c", []string{"q", "ctrl+c"}, "quit", "q"},
 				{"tab", []string{"tab"}, "focus main ↔ detail", "tab"},
 				{"esc / backspace", []string{"esc", "backspace"}, "go back / close overlay", "esc"},
@@ -75,7 +76,7 @@ func statusHints(main MainView, explorerOpen bool) string {
 	if explorerOpen {
 		return "enter open · esc close · tab focus · ?/help"
 	}
-	parts := []string{"g r relations", "?/help", "/ filter", "esc back", "q quit"}
+	parts := []string{":cmd", "g r relations", "?/help", "/ filter", "esc back", "q quit"}
 	switch main {
 	case MainCommits:
 		parts = append([]string{"enter files"}, parts...)

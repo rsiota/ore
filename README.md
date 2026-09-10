@@ -12,11 +12,21 @@ go run ./cmd/ore /path/to/repo
 go run ./cmd/ore -C /path/to/repo
 ```
 
-**Keys:** `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `esc` back · `q` quit
+**Keys:** `:` commands · `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `esc` back · `q` quit
 
 ## Status
 
-Wave 3 started: relationship explorer for commits and blame lines. See [ROADMAP.md](ROADMAP.md).
+Ex command line (`:blame`, `:history`, `:goto`, …). See [ROADMAP.md](ROADMAP.md).
+
+### Ex commands
+
+| Command | Action |
+|---------|--------|
+| `:blame <path> [rev]` | Open blame (rev defaults to selection / HEAD) |
+| `:history <path>` | Path history with rename follow |
+| `:goto <hash>` | Jump to commit (prefix match) |
+| `:help` | Open help |
+| `:q` | Quit |
 
 ## Stack
 

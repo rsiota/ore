@@ -66,7 +66,7 @@ Files: `cmd/ore`, `internal/git`, `internal/ui`, `internal/config`, `internal/ve
 - [x] `git log --follow -- path` (`FileHistory`)
 - [x] Detail pane tracks the selected history row (path-scoped `ShowPath`)
 - [x] `esc` / `backspace` to walk back files → commits
-- [ ] Ex commands: `:history`, `:open`
+- [x] Ex commands: `:blame`, `:history`, `:goto`, `:help`, `:q`
 
 ### Wave 2 — Blame / archaeology grid ✅ (started)
 
@@ -80,7 +80,7 @@ Files: `cmd/ore`, `internal/git`, `internal/ui`, `internal/config`, `internal/ve
 - [x] Soft age washes + relative age column
 - [x] Cursor → detail shows commit that last touched the line (path-scoped)
 - [x] `f` / `g f` follow line backward via porcelain `previous`
-- [ ] `:blame path` ex-command
+- [x] `:blame path` ex-command (and `:history`, `:goto`)
 - [ ] Author colouring / mini line timeline
 - [ ] Collapse/expand logical blocks (later)
 

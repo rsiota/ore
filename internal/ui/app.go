@@ -69,6 +69,7 @@ type Model struct {
 
 	detail           *git.CommitDetail
 	detailFilterPath string // path passed to Show/ShowPath for stale checks
+	detailExpectHash string // if set, detailLoadedMsg may target this hash (e.g. :goto)
 	detailOffset     int
 	loading          bool
 	loadingDetail    bool
@@ -83,8 +84,11 @@ type Model struct {
 	filterTyping bool
 	filter       string // applied / live query
 
-	explorer       RelExplorer
-	loadingRel     bool
+	exTyping bool
+	exLine   string
+
+	explorer   RelExplorer
+	loadingRel bool
 }
 
 // New builds a model bound to repo. Call Init via the Bubble Tea program.
@@ -240,9 +244,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case detailLoadedMsg:
 		m.loadingDetail = false
-		if msg.hash != m.selectedHash() || msg.path != m.detailFilterPath {
+		expect := m.selectedHash()
+		if m.detailExpectHash != "" {
+			expect = m.detailExpectHash
+		}
+		if !hashMatch(msg.hash, expect) || msg.path != m.detailFilterPath {
 			return m, nil // stale
 		}
+		m.detailExpectHash = ""
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.detail = nil
@@ -373,6 +382,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.exTyping {
+		return m.handleExKeys(msg)
+	}
+
 	if m.filterTyping {
 		return m.handleFilterKeys(msg)
 	}
@@ -400,6 +413,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.goBack()
+	case ":":
+		m.beginEx()
+		m.status = ":█"
+		return m, nil
 	case "/":
 		if m.focus == FocusMain {
 			m.chordG = false
@@ -825,7 +842,7 @@ func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("loading history · %s", path)
 		return m, loadHistoryCmd(m.repo, path)
 	case "b":
-		return m.startBlame(m.files[idx[m.fileCursor]].Path, m.filesCommitHash, MainFiles)
+		return m, m.startBlame(m.files[idx[m.fileCursor]].Path, m.filesCommitHash, MainFiles)
 	}
 	return m, nil
 }
@@ -866,15 +883,15 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureHistoryVisible()
 		return m, m.reloadDetail()
 	case "b", "enter", "l":
-		return m.startBlame(m.historyPath, m.history[idx[m.historyCursor]].Hash, MainHistory)
+		return m, m.startBlame(m.historyPath, m.history[idx[m.historyCursor]].Hash, MainHistory)
 	}
 	return m, nil
 }
 
-func (m Model) startBlame(path, rev string, from MainView) (tea.Model, tea.Cmd) {
+func (m *Model) startBlame(path, rev string, from MainView) tea.Cmd {
 	if path == "" || rev == "" {
 		m.status = "cannot blame: missing path or revision"
-		return m, nil
+		return nil
 	}
 	m.filter = ""
 	m.filterTyping = false
@@ -885,7 +902,7 @@ func (m Model) startBlame(path, rev string, from MainView) (tea.Model, tea.Cmd) 
 	m.loadingBlame = true
 	m.chordG = false
 	m.status = fmt.Sprintf("loading blame · %s @ %s", path, shortHash(rev))
-	return m, loadBlameCmd(m.repo, path, rev)
+	return loadBlameCmd(m.repo, path, rev)
 }
 
 func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1059,6 +1076,15 @@ func shortHash(hash string) string {
 	return hash
 }
 
+func hashMatch(full, expect string) bool {
+	if expect == "" {
+		return false
+	}
+	f := strings.ToLower(full)
+	e := strings.ToLower(expect)
+	return f == e || strings.HasPrefix(f, e) || strings.HasPrefix(e, f)
+}
+
 func identityIndices(n int) []int {
 	idx := make([]int, n)
 	for i := range idx {
@@ -1141,6 +1167,9 @@ func (m Model) renderTitle() string {
 }
 
 func (m Model) renderStatus() string {
+	if m.exTyping {
+		return fitWidth(styleFilter.Render(" :"+m.exLine+"█")+"  "+styleMuted.Render("enter run · esc cancel"), m.width)
+	}
 	if m.filterTyping {
 		return fitWidth(styleFilter.Render(" /"+m.filter+"█")+"  "+styleMuted.Render("enter keep · esc clear"), m.width)
 	}

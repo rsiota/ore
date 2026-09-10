@@ -120,5 +120,10 @@ func (h HelpPanel) rows() []string {
 		}
 		rows = append(rows, "")
 	}
+	rows = append(rows, styleHelpSection.Render("Commands"))
+	for _, cmd := range exCommands() {
+		rows = append(rows, fmt.Sprintf("  %-18s  %s", cmd.usage, cmd.desc))
+	}
+	rows = append(rows, "")
 	return rows
 }
