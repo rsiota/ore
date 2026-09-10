@@ -1,0 +1,23 @@
+# Binary
+/ore
+
+# GoReleaser build output
+/dist
+
+# Go
+*.test
+*.out
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local agent context/state
+.crush/
+CRUSH.md
