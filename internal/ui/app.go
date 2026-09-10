@@ -19,6 +19,7 @@ type Focus int
 const (
 	FocusMain Focus = iota
 	FocusDetail
+	FocusExplorer
 )
 
 // MainView is the left/main grid mode.
@@ -81,6 +82,9 @@ type Model struct {
 
 	filterTyping bool
 	filter       string // applied / live query
+
+	explorer       RelExplorer
+	loadingRel     bool
 }
 
 // New builds a model bound to repo. Call Init via the Bubble Tea program.
@@ -115,10 +119,16 @@ type historyLoadedMsg struct {
 }
 
 type blameLoadedMsg struct {
-	path    string
-	rev     string
-	lines   []git.BlameLine
-	err     error
+	path  string
+	rev   string
+	lines []git.BlameLine
+	err   error
+}
+
+type relationsLoadedMsg struct {
+	commit *git.CommitRelations
+	line   *git.LineRelations
+	err    error
 }
 
 func loadCommitsCmd(repo *git.Repo) tea.Cmd {
@@ -170,6 +180,30 @@ func loadBlameCmd(repo *git.Repo, path, rev string) tea.Cmd {
 	}
 }
 
+func loadCommitRelationsCmd(repo *git.Repo, hash string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		rel, err := repo.Relations(ctx, hash)
+		if err != nil {
+			return relationsLoadedMsg{err: err}
+		}
+		return relationsLoadedMsg{commit: &rel}
+	}
+}
+
+func loadLineRelationsCmd(repo *git.Repo, path, rev string, line git.BlameLine) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		rel, err := repo.LineRelationsAt(ctx, path, rev, line)
+		if err != nil {
+			return relationsLoadedMsg{err: err}
+		}
+		return relationsLoadedMsg{line: &rel}
+	}
+}
+
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
 	return loadCommitsCmd(m.repo)
@@ -182,6 +216,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.help.SetSize(msg.Width, msg.Height)
+		m.layoutExplorer()
 		return m, nil
 
 	case commitsLoadedMsg:
@@ -283,6 +318,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detail = nil
 		return m, nil
 
+	case relationsLoadedMsg:
+		m.loadingRel = false
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.status = "error"
+			return m, nil
+		}
+		m.err = ""
+		if msg.line != nil {
+			m.explorer.LoadLine(*msg.line)
+		} else if msg.commit != nil {
+			m.explorer.LoadCommit(*msg.commit)
+		}
+		m.layoutExplorer()
+		m.focus = FocusExplorer
+		m.status = "relationships · enter open · esc close"
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -324,19 +377,24 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFilterKeys(msg)
 	}
 
+	if m.focus == FocusExplorer && m.explorer.Opened() {
+		return m.handleExplorerKeys(msg)
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	case "tab":
 		m.chordG = false
-		if m.focus == FocusMain {
-			m.focus = FocusDetail
-		} else {
-			m.focus = FocusMain
-		}
-		return m, nil
+		return m.cycleFocus()
 	case "esc", "backspace":
 		m.chordG = false
+		if m.explorer.Opened() && msg.String() == "esc" {
+			m.explorer.Close()
+			m.focus = FocusMain
+			m.refreshStatus()
+			return m, m.reloadDetail()
+		}
 		if m.filter != "" && msg.String() == "esc" {
 			m.clearFilter()
 			return m, nil
@@ -362,6 +420,122 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDetailKeys(msg)
 	}
 	return m, nil
+}
+
+func (m Model) cycleFocus() (tea.Model, tea.Cmd) {
+	if m.explorer.Opened() {
+		switch m.focus {
+		case FocusMain:
+			m.focus = FocusExplorer
+		case FocusExplorer:
+			m.focus = FocusMain
+		default:
+			m.focus = FocusMain
+		}
+		return m, nil
+	}
+	if m.focus == FocusMain {
+		m.focus = FocusDetail
+	} else {
+		m.focus = FocusMain
+	}
+	return m, nil
+}
+
+func (m Model) handleExplorerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	consumed, activate := m.explorer.Update(msg)
+	if !consumed {
+		return m, nil
+	}
+	if !m.explorer.Opened() {
+		m.focus = FocusMain
+		m.refreshStatus()
+		return m, m.reloadDetail()
+	}
+	if activate {
+		return m.activateRelation()
+	}
+	return m, nil
+}
+
+func (m Model) openRelations() (tea.Model, tea.Cmd) {
+	m.chordG = false
+	m.loadingRel = true
+	m.status = "loading relationships…"
+	if m.main == MainBlame {
+		idx := m.blameIndices()
+		if m.blameCursor < 0 || m.blameCursor >= len(idx) {
+			m.loadingRel = false
+			m.status = "no blame line selected"
+			return m, nil
+		}
+		line := m.blame[idx[m.blameCursor]]
+		return m, loadLineRelationsCmd(m.repo, m.blamePath, m.blameRev, line)
+	}
+	hash := m.selectedHash()
+	if hash == "" {
+		m.loadingRel = false
+		m.status = "no commit selected"
+		return m, nil
+	}
+	return m, loadCommitRelationsCmd(m.repo, hash)
+}
+
+func (m Model) activateRelation() (tea.Model, tea.Cmd) {
+	row, ok := m.explorer.Selected()
+	if !ok {
+		return m, nil
+	}
+	switch row.kind {
+	case relCommit:
+		m.explorer.Close()
+		m.focus = FocusMain
+		// Jump main grid to this commit when possible.
+		if m.jumpToCommit(row.hash) {
+			m.refreshStatus()
+			return m, m.reloadDetail()
+		}
+		// Commit not in current log window — still show detail.
+		m.detailFilterPath = ""
+		m.loadingDetail = true
+		m.main = MainCommits
+		return m, loadDetailCmd(m.repo, row.hash, "")
+	case relFile:
+		path := row.path
+		m.explorer.Close()
+		m.focus = FocusMain
+		m.historyPath = path
+		m.loadingHistory = true
+		m.status = fmt.Sprintf("loading history · %s", path)
+		return m, loadHistoryCmd(m.repo, path)
+	default:
+		return m, nil
+	}
+}
+
+func (m *Model) jumpToCommit(hash string) bool {
+	for i, c := range m.commits {
+		if c.Hash == hash || strings.HasPrefix(c.Hash, hash) || strings.HasPrefix(hash, c.Hash) {
+			m.main = MainCommits
+			m.filter = ""
+			m.filterTyping = false
+			// cursor indexes filtered list; with empty filter == raw index
+			m.cursor = i
+			m.ensureCommitVisible()
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) layoutExplorer() {
+	if m.width < 80 {
+		m.explorer.SetSize(m.width, m.bodyHeight())
+		return
+	}
+	cw := m.mainPaneWidth()
+	dw := m.width - cw - 1
+	m.explorer.SetSize(dw, m.bodyHeight())
 }
 
 func (m Model) handleFilterKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -476,6 +650,30 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	if m.chordG {
+		m.chordG = false
+		switch key {
+		case "r":
+			return m.openRelations()
+		case "g", "home":
+			return m.gotoMainTop()
+		case "f":
+			if m.main == MainBlame {
+				return m.followBlameLine()
+			}
+		}
+		// Unrecognized second key — ignore chord, continue with key.
+	}
+	if key == "g" {
+		m.chordG = true
+		m.status = "g · g top · r relations"
+		if m.main == MainBlame {
+			m.status = "g · g top · r relations · f follow"
+		}
+		return m, nil
+	}
+
 	switch m.main {
 	case MainCommits:
 		return m.handleCommitKeys(msg)
@@ -487,6 +685,36 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleBlameKeys(msg)
 	}
 	return m, nil
+}
+
+func (m Model) gotoMainTop() (tea.Model, tea.Cmd) {
+	switch m.main {
+	case MainCommits:
+		if len(m.commitIndices()) == 0 {
+			return m, nil
+		}
+		m.cursor = 0
+		m.ensureCommitVisible()
+	case MainFiles:
+		if len(m.fileIndices()) == 0 {
+			return m, nil
+		}
+		m.fileCursor = 0
+		m.ensureFileVisible()
+	case MainHistory:
+		if len(m.historyIndices()) == 0 {
+			return m, nil
+		}
+		m.historyCursor = 0
+		m.ensureHistoryVisible()
+	case MainBlame:
+		if len(m.blameIndices()) == 0 {
+			return m, nil
+		}
+		m.blameCursor = 0
+		m.ensureBlameVisible()
+	}
+	return m, m.reloadDetail()
 }
 
 func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -508,7 +736,7 @@ func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.ensureCommitVisible()
 			return m, m.reloadDetail()
 		}
-	case "g", "home":
+	case "home":
 		m.cursor = 0
 		m.ensureCommitVisible()
 		return m, m.reloadDetail()
@@ -574,7 +802,7 @@ func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.ensureFileVisible()
 			return m, m.reloadDetail()
 		}
-	case "g", "home":
+	case "home":
 		m.fileCursor = 0
 		m.ensureFileVisible()
 		return m, m.reloadDetail()
@@ -621,7 +849,7 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.ensureHistoryVisible()
 			return m, m.reloadDetail()
 		}
-	case "g", "home":
+	case "home":
 		m.historyCursor = 0
 		m.ensureHistoryVisible()
 		return m, m.reloadDetail()
@@ -664,25 +892,6 @@ func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	idx := m.blameIndices()
 	n := len(idx)
-
-	// g-prefix: gg = top, gf = follow line backward
-	if m.chordG {
-		m.chordG = false
-		switch key {
-		case "g", "home":
-			if n == 0 {
-				return m, nil
-			}
-			m.blameCursor = 0
-			m.ensureBlameVisible()
-			return m, m.reloadDetail()
-		case "f":
-			return m.followBlameLine()
-		default:
-			// fall through and handle key normally
-		}
-	}
-
 	if n == 0 {
 		return m, nil
 	}
@@ -699,10 +908,6 @@ func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.ensureBlameVisible()
 			return m, m.reloadDetail()
 		}
-	case "g":
-		m.chordG = true
-		m.status = "g · g top · f follow"
-		return m, nil
 	case "home":
 		m.blameCursor = 0
 		m.ensureBlameVisible()
@@ -940,18 +1145,14 @@ func (m Model) renderStatus() string {
 		return fitWidth(styleFilter.Render(" /"+m.filter+"█")+"  "+styleMuted.Render("enter keep · esc clear"), m.width)
 	}
 	msg := m.status
-	busy := m.loading || m.loadingDetail || m.loadingHistory || m.loadingBlame
+	busy := m.loading || m.loadingDetail || m.loadingHistory || m.loadingBlame || m.loadingRel
 	if m.err != "" {
 		msg = styleErr.Render(m.err)
 	} else if busy {
 		msg = styleMuted.Render(msg + " · fetching…")
 	} else {
-		hints := statusHints(m.main, false)
-		if m.filter != "" {
-			msg = styleMuted.Render(msg + "  ·  " + hints)
-		} else {
-			msg = styleMuted.Render(msg + "  ·  " + hints)
-		}
+		hints := statusHints(m.main, m.explorer.Opened())
+		msg = styleMuted.Render(msg + "  ·  " + hints)
 	}
 	return fitWidth(msg, m.width)
 }
@@ -962,12 +1163,22 @@ func (m Model) renderBody() string {
 		return fitWidth(styleMuted.Render(" loading commit history…"), m.width)
 	}
 	if m.width < 80 {
+		if m.explorer.Opened() {
+			m.explorer.SetSize(m.width, h)
+			return m.explorer.View(m.focus == FocusExplorer)
+		}
 		return m.renderMainPane(m.width, h)
 	}
 	cw := m.mainPaneWidth()
 	dw := m.width - cw - 1
 	left := m.renderMainPane(cw, h)
-	right := m.renderDetailPane(dw, h)
+	var right string
+	if m.explorer.Opened() {
+		m.explorer.SetSize(dw, h)
+		right = m.explorer.View(m.focus == FocusExplorer)
+	} else {
+		right = m.renderDetailPane(dw, h)
+	}
 	sep := styleMuted.Width(1).Render("│")
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, sep, right)
 }

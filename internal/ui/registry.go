@@ -31,11 +31,22 @@ func registry() []Section {
 			Title: "Navigation",
 			Items: []Binding{
 				{"j/k · ↑/↓", []string{"j", "k", "up", "down"}, "move", "j/k"},
-				{"g g / G", []string{"g", "G"}, "top / bottom (blame: g then g)", "g/G"},
+				{"g g / G", []string{"g", "G"}, "top / bottom", "gg/G"},
+				{"g r", []string{"g", "r"}, "relationship explorer", "g r"},
 				{"ctrl+d / ctrl+u", []string{"ctrl+d", "ctrl+u"}, "page down / up", ""},
 				{"enter / l", []string{"enter", "l"}, "open (commit→files→history; history→blame)", "enter"},
 				{"b", []string{"b"}, "blame file at revision", "b"},
 				{"f / g f", []string{"f", "g"}, "follow blame line backward", "f"},
+			},
+		},
+		{
+			Title: "Relationships (g r)",
+			Items: []Binding{
+				{"g r", []string{"g", "r"}, "open explorer for commit or blame line", "g r"},
+				{"j/k", []string{"j", "k"}, "move in explorer", "j/k"},
+				{"enter / l", []string{"enter", "l"}, "jump to commit or file history", "enter"},
+				{"esc / h", []string{"esc", "h"}, "close explorer", "esc"},
+				{"tab", []string{"tab"}, "focus main ↔ explorer", "tab"},
 			},
 		},
 		{
@@ -60,11 +71,11 @@ func registry() []Section {
 }
 
 // statusHints returns a short hint string for the current context.
-func statusHints(main MainView, filtering bool) string {
-	if filtering {
-		return "filter · enter keep · esc clear"
+func statusHints(main MainView, explorerOpen bool) string {
+	if explorerOpen {
+		return "enter open · esc close · tab focus · ?/help"
 	}
-	parts := []string{"?/help", "/ filter", "esc back", "q quit"}
+	parts := []string{"g r relations", "?/help", "/ filter", "esc back", "q quit"}
 	switch main {
 	case MainCommits:
 		parts = append([]string{"enter files"}, parts...)

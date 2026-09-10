@@ -84,15 +84,16 @@ Files: `cmd/ore`, `internal/git`, `internal/ui`, `internal/config`, `internal/ve
 - [ ] Author colouring / mini line timeline
 - [ ] Collapse/expand logical blocks (later)
 
-### Wave 3 — Relationship explorer (`g r`)
+### Wave 3 — Relationship explorer (`g r`) ✅ (started)
 
 Analogous to creel’s FK explorer:
 
-- From **commit**: parents, children, files, authors, linked issues/PRs if parsed
-- From **file**: rename chain, co-changed files, hot spots
-- From **line/hunk**: commits that shaped it
-- `h/l` between levels, `Enter` to jump into that node’s view
-
+- [x] From **commit**: parents, children, files, author (`g r`)
+- [x] From **blame line**: this commit, previous, file history, file
+- [x] Docked right pane; `j/k`, `Enter` to jump, `esc`/`h` to close, `Tab` focus
+- [ ] Lazy nested expand / deeper graph walk
+- [ ] Linked issues/PRs if parsed
+- [ ] Co-changed file hot spots
 ### Wave 4 — Polish & power
 
 - [ ] Timeline / churn strip

@@ -12,11 +12,11 @@ go run ./cmd/ore /path/to/repo
 go run ./cmd/ore -C /path/to/repo
 ```
 
-**Keys:** `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `esc` back · `Tab` detail · `q` quit
+**Keys:** `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `esc` back · `q` quit
 
 ## Status
 
-Usability slice: registry-driven help, grid filter, light chrome. Archaeology loop through blame is in place — see [ROADMAP.md](ROADMAP.md).
+Wave 3 started: relationship explorer for commits and blame lines. See [ROADMAP.md](ROADMAP.md).
 
 ## Stack
 

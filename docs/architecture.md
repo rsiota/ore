@@ -24,3 +24,4 @@ internal/version/  ldflags version string
 - Read-only product surface; do not grow write-path features in early waves.
 - Navigation stack: **commits → files → history → blame** (`Enter`/`l` / `b` forward, `esc` back). History uses `git log --follow`; blame uses `git blame --porcelain`; detail uses `Show` / `ShowPath`. Line follow (`f` / `g f`) reloads blame at porcelain `previous`.
 - Discoverability: `registry()` drives the `?` help overlay; `/` live-filters the current main grid.
+- Relationships: `g r` docks a right-pane explorer (parents/children/files, or blame-line neighbourhood). `Enter` jumps to a commit or file history.
