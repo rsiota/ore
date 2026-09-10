@@ -41,9 +41,13 @@ type Model struct {
 	focus  Focus
 	main   MainView
 
-	commits      []git.Commit
-	cursor       int
-	commitOffset int
+	commits         []git.Commit
+	cursor          int
+	commitOffset    int
+	commitCol       int // active column (cursor / sort target)
+	commitFilterCol int // column the active / filter applies to
+	commitSortCol   int
+	commitSortDir   SortDir
 
 	files            []git.FileChange
 	fileCursor       int
@@ -94,11 +98,12 @@ type Model struct {
 // New builds a model bound to repo. Call Init via the Bubble Tea program.
 func New(repo *git.Repo) Model {
 	return Model{
-		repo:    repo,
-		focus:   FocusMain,
-		main:    MainCommits,
-		loading: true,
-		status:  "loading commits…",
+		repo:          repo,
+		focus:         FocusMain,
+		main:          MainCommits,
+		loading:       true,
+		status:        "loading commits…",
+		commitSortCol: -1,
 	}
 }
 
@@ -421,7 +426,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focus == FocusMain {
 			m.chordG = false
 			m.filterTyping = true
-			m.status = "filter: " + m.filter
+			if m.main == MainCommits {
+				m.commitFilterCol = m.commitCol
+			}
+			m.status = m.filterPrompt()
 			return m, nil
 		}
 	case "?":
@@ -555,6 +563,16 @@ func (m *Model) layoutExplorer() {
 	m.explorer.SetSize(dw, m.bodyHeight())
 }
 
+func (m Model) filterPrompt() string {
+	if m.main == MainCommits {
+		col := m.commitFilterCol
+		if col >= 0 && col < len(commitColumns) {
+			return "filter " + commitColumns[col] + ": " + m.filter + "█"
+		}
+	}
+	return "filter: " + m.filter + "█"
+}
+
 func (m Model) handleFilterKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "ctrl+c":
@@ -570,25 +588,24 @@ func (m Model) handleFilterKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filter = string(r[:len(r)-1])
 			m.clampMainCursor()
 		}
-		m.status = "filter: " + m.filter + "█"
+		m.status = m.filterPrompt()
 		return m, nil
 	case "ctrl+u":
 		m.filter = ""
 		m.clampMainCursor()
-		m.status = "filter: █"
+		m.status = m.filterPrompt()
 		return m, nil
 	default:
 		if len(msg.Runes) > 0 && !msg.Alt && msg.Type == tea.KeyRunes {
 			m.filter += string(msg.Runes)
 			m.clampMainCursor()
-			m.status = "filter: " + m.filter + "█"
+			m.status = m.filterPrompt()
 			return m, nil
 		}
-		// Ignore navigation chords while typing the filter.
 		if s := msg.String(); len(s) == 1 && s[0] >= 32 {
 			m.filter += s
 			m.clampMainCursor()
-			m.status = "filter: " + m.filter + "█"
+			m.status = m.filterPrompt()
 		}
 	}
 	return m, nil
@@ -597,6 +614,7 @@ func (m Model) handleFilterKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) clearFilter() {
 	m.filter = ""
 	m.filterTyping = false
+	m.commitFilterCol = 0
 	m.clampMainCursor()
 	m.refreshStatus()
 }
@@ -608,15 +626,31 @@ func (m *Model) refreshStatus() {
 	switch m.main {
 	case MainCommits:
 		m.status = fmt.Sprintf("%d commits", len(m.commitIndices()))
+		if m.commitSortDir != SortNone && m.commitSortCol >= 0 && m.commitSortCol < len(commitColumns) {
+			m.status += fmt.Sprintf(" · sort %s%s", commitColumns[m.commitSortCol], m.commitSortDir.Arrow())
+		}
+		if m.filter != "" {
+			col := ""
+			if m.commitFilterCol >= 0 && m.commitFilterCol < len(commitColumns) {
+				col = commitColumns[m.commitFilterCol] + " "
+			}
+			m.status += " · /" + col + m.filter
+		}
 	case MainFiles:
 		m.status = fmt.Sprintf("%d files in %s", len(m.fileIndices()), shortHash(m.filesCommitHash))
+		if m.filter != "" {
+			m.status += " · /" + m.filter
+		}
 	case MainHistory:
 		m.status = fmt.Sprintf("history · %s · %d commits", m.historyPath, len(m.historyIndices()))
+		if m.filter != "" {
+			m.status += " · /" + m.filter
+		}
 	case MainBlame:
 		m.status = fmt.Sprintf("blame · %s @ %s · %d lines", m.blamePath, shortHash(m.blameRev), len(m.blameIndices()))
-	}
-	if m.filter != "" {
-		m.status += " · /" + m.filter
+		if m.filter != "" {
+			m.status += " · /" + m.filter
+		}
 	}
 }
 
@@ -737,6 +771,37 @@ func (m Model) gotoMainTop() (tea.Model, tea.Cmd) {
 func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	idx := m.commitIndices()
 	n := len(idx)
+	switch msg.String() {
+	case "h", "left":
+		if m.commitCol > 0 {
+			m.commitCol--
+		}
+		return m, nil
+	case "l", "right":
+		if m.commitCol < commitColCount-1 {
+			m.commitCol++
+		}
+		return m, nil
+	case "0":
+		m.commitCol = 0
+		return m, nil
+	case "$":
+		m.commitCol = commitColCount - 1
+		return m, nil
+	case "o":
+		if m.commitSortCol != m.commitCol {
+			m.commitSortCol = m.commitCol
+			m.commitSortDir = SortAsc
+		} else {
+			m.commitSortDir = CycleSort(m.commitSortDir)
+			if m.commitSortDir == SortNone {
+				m.commitSortCol = -1
+			}
+		}
+		m.clampMainCursor()
+		m.refreshStatus()
+		return m, m.reloadDetail()
+	}
 	if n == 0 {
 		return m, nil
 	}
@@ -769,7 +834,7 @@ func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursor = max(0, m.cursor-m.mainPage())
 		m.ensureCommitVisible()
 		return m, m.reloadDetail()
-	case "enter", "l":
+	case "enter":
 		hash := m.selectedHash()
 		if m.detail != nil && m.detail.Commit.Hash == hash {
 			m.enterFilesView()
@@ -1094,10 +1159,12 @@ func identityIndices(n int) []int {
 }
 
 func (m Model) commitIndices() []int {
-	if m.filter == "" {
-		return identityIndices(len(m.commits))
+	col := m.commitCol
+	if m.filter != "" || m.filterTyping {
+		col = m.commitFilterCol
 	}
-	return filterCommitIndices(m.commits, m.filter)
+	idx := filterCommitIndicesCol(m.commits, m.filter, col)
+	return sortCommitIndices(m.commits, idx, m.commitSortCol, m.commitSortDir)
 }
 
 func (m Model) fileIndices() []int {
@@ -1171,7 +1238,7 @@ func (m Model) renderStatus() string {
 		return fitWidth(styleFilter.Render(" :"+m.exLine+"█")+"  "+styleMuted.Render("enter run · esc cancel"), m.width)
 	}
 	if m.filterTyping {
-		return fitWidth(styleFilter.Render(" /"+m.filter+"█")+"  "+styleMuted.Render("enter keep · esc clear"), m.width)
+		return fitWidth(styleFilter.Render(" "+m.filterPrompt())+"  "+styleMuted.Render("enter keep · esc clear"), m.width)
 	}
 	msg := m.status
 	// Do not treat loadingDetail as status-bar busy: every j/k reloads detail and
@@ -1255,30 +1322,28 @@ func (m Model) renderPaneHeader(width int, title string) []string {
 }
 
 func (m Model) renderCommitPane(width, height int) string {
-	lines := m.renderPaneHeader(width, m.mainTitle())
-	lines = append(lines, cell(styleHeader,
-		fmt.Sprintf("%-7s %-10s %-12s %s", "HASH", "DATE", "AUTHOR", "SUBJECT"),
-		width,
-	))
-
 	idx := m.commitIndices()
-	h := height - 2
-	if h < 1 {
-		h = 1
+	rows := make([][]string, len(idx))
+	for i, src := range idx {
+		rows[i] = commitRow(m.commits[src])
 	}
-	end := min(len(idx), m.commitOffset+h)
-	for i := m.commitOffset; i < end; i++ {
-		row := formatCommitRow(m.commits[idx[i]])
-		if i == m.cursor {
-			lines = append(lines, cell(styleFocus, row, width))
-		} else {
-			lines = append(lines, fitWidth(row, width))
-		}
+	g := Grid{
+		Title:     m.mainTitle(),
+		Columns:   commitColumns,
+		Rows:      rows,
+		CursorRow: m.cursor,
+		CursorCol: m.commitCol,
+		OffsetRow: m.commitOffset,
+		SortCol:   m.commitSortCol,
+		SortDir:   m.commitSortDir,
+		Width:     width,
+		Height:    height,
+		Focused:   m.focus == FocusMain,
 	}
-	if len(idx) == 0 && m.filter != "" {
-		lines = append(lines, fitWidth(styleMuted.Render("(no matches)"), width))
-	}
-	return padPane(lines, width, height)
+	g.AutoWidths()
+	g.ClampCursor()
+	// Keep model scroll in sync if clamp moved things (empty grid).
+	return g.View()
 }
 
 func (m Model) renderFilesPane(width, height int) string {

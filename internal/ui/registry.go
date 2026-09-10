@@ -31,13 +31,24 @@ func registry() []Section {
 		{
 			Title: "Navigation",
 			Items: []Binding{
-				{"j/k · ↑/↓", []string{"j", "k", "up", "down"}, "move", "j/k"},
+				{"j/k · ↑/↓", []string{"j", "k", "up", "down"}, "move row", "j/k"},
 				{"g g / G", []string{"g", "G"}, "top / bottom", "gg/G"},
 				{"g r", []string{"g", "r"}, "relationship explorer", "g r"},
 				{"ctrl+d / ctrl+u", []string{"ctrl+d", "ctrl+u"}, "page down / up", ""},
-				{"enter / l", []string{"enter", "l"}, "open (commit→files→history; history→blame)", "enter"},
+				{"enter", []string{"enter"}, "open (commit→files→history; history→blame)", "enter"},
+				{"l", []string{"l"}, "open (files / history / blame; not commits)", ""},
 				{"b", []string{"b"}, "blame file at revision", "b"},
 				{"f / g f", []string{"f", "g"}, "follow blame line backward", "f"},
+			},
+		},
+		{
+			Title: "Commit grid",
+			Items: []Binding{
+				{"h/l · ←/→", []string{"h", "l", "left", "right"}, "previous / next column", "h/l"},
+				{"0 / $", []string{"0", "$"}, "first / last column", ""},
+				{"o", []string{"o"}, "cycle sort on current column (asc→desc→off)", "o"},
+				{"/", []string{"/"}, "filter current column", "/"},
+				{"enter", []string{"enter"}, "open files for commit", "enter"},
 			},
 		},
 		{
@@ -62,7 +73,7 @@ func registry() []Section {
 		{
 			Title: "Filter",
 			Items: []Binding{
-				{"/", []string{"/"}, "start or focus filter", "/"},
+				{"/", []string{"/"}, "start filter (commits: active column)", "/"},
 				{"enter", []string{"enter"}, "keep filter, leave input", ""},
 				{"esc", []string{"esc"}, "clear filter", ""},
 				{"backspace", []string{"backspace"}, "delete character", ""},
@@ -79,7 +90,7 @@ func statusHints(main MainView, explorerOpen bool) string {
 	parts := []string{":cmd", "g r relations", "?/help", "/ filter", "esc back", "q quit"}
 	switch main {
 	case MainCommits:
-		parts = append([]string{"enter files"}, parts...)
+		parts = append([]string{"h/l cols", "o sort", "enter files"}, parts...)
 	case MainFiles:
 		parts = append([]string{"enter history", "b blame"}, parts...)
 	case MainHistory:

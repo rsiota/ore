@@ -22,7 +22,8 @@ internal/version/  ldflags version string
 - Domain boundary mirrors creel’s `internal/db`: UI talks to `*git.Repo`, never shells out itself.
 - Prefer copying creel interaction patterns (registry, palette, session, themes) over a shared module until a second product proves the abstraction.
 - Read-only product surface; do not grow write-path features in early waves.
-- Navigation stack: **commits → files → history → blame** (`Enter`/`l` / `b` forward, `esc` back). History uses `git log --follow`; blame uses `git blame --porcelain`; detail uses `Show` / `ShowPath`. Line follow (`f` / `g f`) reloads blame at porcelain `previous`.
+- Navigation stack: **commits → files → history → blame** (`Enter` / `b` forward; `l` still opens on files/history/blame; `esc` back). History uses `git log --follow`; blame uses `git blame --porcelain`; detail uses `Show` / `ShowPath`. Line follow (`f` / `g f`) reloads blame at porcelain `previous`.
+- Commit grid: shared `Grid` widget — cell cursor (`h`/`l`), `o` cycles sort on the focused column, `/` filters that column (frozen until cleared).
 - Discoverability: `registry()` drives the `?` help overlay; `/` live-filters the current main grid.
 - Relationships: `g r` docks a right-pane explorer (parents/children/files, or blame-line neighbourhood). `Enter` jumps to a commit or file history.
 - Ex commands: `:` opens a vim-style prompt; `exCommands()` drives dispatch and the help Commands list (`:blame`, `:history`, `:goto`, …).

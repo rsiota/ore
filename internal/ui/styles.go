@@ -26,4 +26,8 @@ var (
 	styleHelpTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffffff")).Background(lipgloss.Color("#0969da"))
 	styleHelpSection = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#0969da"))
 	styleFilter      = lipgloss.NewStyle().Foreground(lipgloss.Color("#1f2328")).Background(lipgloss.Color("#fff8c5"))
+	// Selected row, non-active cell — softer than styleFocus (active cell).
+	styleRowFocus = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#1f2328")).
+			Background(lipgloss.Color("#eaeef2"))
 )

@@ -51,8 +51,9 @@ fluid as following foreign keys in creel.
 - [x] Binding registry → `?` help overlay
 - [x] `/` filter on the current grid
 - [x] Light chrome (GitHub-light title/focus/muted)
+- [x] Columnar commit grid: `h`/`l` cells, `o` sort, column-scoped `/`
 - [ ] Soft graph column (like `git log --graph`, navigable)
-- [ ] Column sort
+- [ ] Extend grid widget to files / history / blame
 - [ ] Command palette (`Ctrl+P`)
 - [ ] Themes picker / dark variant
 

@@ -14,9 +14,11 @@ go run ./cmd/ore -C /path/to/repo
 
 **Keys:** `:` commands · `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `esc` back · `q` quit
 
+**Commit grid:** `h`/`l` columns · `o` cycle sort · `/` filters the active column
+
 ## Status
 
-Ex command line (`:blame`, `:history`, `:goto`, …). See [ROADMAP.md](ROADMAP.md).
+Commit grid is columnar (sort + column-scoped `/`). Ex commands (`:blame`, `:history`, `:goto`, …). See [ROADMAP.md](ROADMAP.md).
 
 ### Ex commands
 
