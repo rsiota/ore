@@ -12,11 +12,11 @@ go run ./cmd/ore /path/to/repo
 go run ./cmd/ore -C /path/to/repo
 ```
 
-**Keys (Wave 2):** `Enter`/`l` open · `b` blame · `f`/`g f` follow line · `esc` back · `Tab` detail · `j`/`k` · `q`
+**Keys:** `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `esc` back · `Tab` detail · `q` quit
 
 ## Status
 
-Wave 2 started: blame grid with age washes and line follow. See [ROADMAP.md](ROADMAP.md).
+Usability slice: registry-driven help, grid filter, light chrome. Archaeology loop through blame is in place — see [ROADMAP.md](ROADMAP.md).
 
 ## Stack
 

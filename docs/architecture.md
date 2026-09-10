@@ -23,3 +23,4 @@ internal/version/  ldflags version string
 - Prefer copying creel interaction patterns (registry, palette, session, themes) over a shared module until a second product proves the abstraction.
 - Read-only product surface; do not grow write-path features in early waves.
 - Navigation stack: **commits → files → history → blame** (`Enter`/`l` / `b` forward, `esc` back). History uses `git log --follow`; blame uses `git blame --porcelain`; detail uses `Show` / `ShowPath`. Line follow (`f` / `g f`) reloads blame at porcelain `previous`.
+- Discoverability: `registry()` drives the `?` help overlay; `/` live-filters the current main grid.

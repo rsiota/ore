@@ -76,6 +76,11 @@ type Model struct {
 
 	branch string
 	head   string
+
+	help HelpPanel
+
+	filterTyping bool
+	filter       string // applied / live query
 }
 
 // New builds a model bound to repo. Call Init via the Bubble Tea program.
@@ -176,6 +181,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.help.SetSize(msg.Width, msg.Height)
 		return m, nil
 
 	case commitsLoadedMsg:
@@ -231,6 +237,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history = msg.commits
 		m.historyCursor = 0
 		m.historyOffset = 0
+		m.filter = ""
+		m.filterTyping = false
 		m.main = MainHistory
 		m.focus = FocusMain
 		m.status = fmt.Sprintf("history · %s · %d commits · b/enter blame", m.historyPath, len(m.history))
@@ -284,26 +292,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) selectedHash() string {
 	switch m.main {
 	case MainBlame:
-		if len(m.blame) == 0 {
+		idx := m.blameIndices()
+		if m.blameCursor < 0 || m.blameCursor >= len(idx) {
 			return ""
 		}
-		return m.blame[m.blameCursor].Hash
+		return m.blame[idx[m.blameCursor]].Hash
 	case MainHistory:
-		if len(m.history) == 0 {
+		idx := m.historyIndices()
+		if m.historyCursor < 0 || m.historyCursor >= len(idx) {
 			return ""
 		}
-		return m.history[m.historyCursor].Hash
+		return m.history[idx[m.historyCursor]].Hash
 	case MainFiles:
 		return m.filesCommitHash
 	default:
-		if len(m.commits) == 0 {
+		idx := m.commitIndices()
+		if m.cursor < 0 || m.cursor >= len(idx) {
 			return ""
 		}
-		return m.commits[m.cursor].Hash
+		return m.commits[idx[m.cursor]].Hash
 	}
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.help.Visible() {
+		m.help.Update(msg)
+		return m, nil
+	}
+
+	if m.filterTyping {
+		return m.handleFilterKeys(msg)
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
@@ -317,10 +337,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "esc", "backspace":
 		m.chordG = false
+		if m.filter != "" && msg.String() == "esc" {
+			m.clearFilter()
+			return m, nil
+		}
 		return m.goBack()
+	case "/":
+		if m.focus == FocusMain {
+			m.chordG = false
+			m.filterTyping = true
+			m.status = "filter: " + m.filter
+			return m, nil
+		}
 	case "?":
 		m.chordG = false
-		m.status = "enter open · b blame · f follow line · esc back · j/k · tab · q"
+		m.help.Toggle()
 		return m, nil
 	}
 
@@ -331,6 +362,71 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDetailKeys(msg)
 	}
 	return m, nil
+}
+
+func (m Model) handleFilterKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "ctrl+c":
+		m.clearFilter()
+		return m, nil
+	case "enter":
+		m.filterTyping = false
+		m.refreshStatus()
+		return m, nil
+	case "backspace":
+		if m.filter != "" {
+			r := []rune(m.filter)
+			m.filter = string(r[:len(r)-1])
+			m.clampMainCursor()
+		}
+		m.status = "filter: " + m.filter + "█"
+		return m, nil
+	case "ctrl+u":
+		m.filter = ""
+		m.clampMainCursor()
+		m.status = "filter: █"
+		return m, nil
+	default:
+		if len(msg.Runes) > 0 && !msg.Alt && msg.Type == tea.KeyRunes {
+			m.filter += string(msg.Runes)
+			m.clampMainCursor()
+			m.status = "filter: " + m.filter + "█"
+			return m, nil
+		}
+		// Ignore navigation chords while typing the filter.
+		if s := msg.String(); len(s) == 1 && s[0] >= 32 {
+			m.filter += s
+			m.clampMainCursor()
+			m.status = "filter: " + m.filter + "█"
+		}
+	}
+	return m, nil
+}
+
+func (m *Model) clearFilter() {
+	m.filter = ""
+	m.filterTyping = false
+	m.clampMainCursor()
+	m.refreshStatus()
+}
+
+func (m *Model) refreshStatus() {
+	if m.err != "" {
+		return
+	}
+	switch m.main {
+	case MainCommits:
+		m.status = fmt.Sprintf("%d commits", len(m.commitIndices()))
+	case MainFiles:
+		m.status = fmt.Sprintf("%d files in %s", len(m.fileIndices()), shortHash(m.filesCommitHash))
+	case MainHistory:
+		m.status = fmt.Sprintf("history · %s · %d commits", m.historyPath, len(m.historyIndices()))
+	case MainBlame:
+		m.status = fmt.Sprintf("blame · %s @ %s · %d lines", m.blamePath, shortHash(m.blameRev), len(m.blameIndices()))
+	}
+	if m.filter != "" {
+		m.status += " · /" + m.filter
+	}
 }
 
 func (m Model) goBack() (tea.Model, tea.Cmd) {
@@ -394,12 +490,14 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if len(m.commits) == 0 {
+	idx := m.commitIndices()
+	n := len(idx)
+	if n == 0 {
 		return m, nil
 	}
 	switch msg.String() {
 	case "j", "down":
-		if m.cursor < len(m.commits)-1 {
+		if m.cursor < n-1 {
 			m.cursor++
 			m.ensureCommitVisible()
 			return m, m.reloadDetail()
@@ -415,11 +513,11 @@ func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureCommitVisible()
 		return m, m.reloadDetail()
 	case "G", "end":
-		m.cursor = len(m.commits) - 1
+		m.cursor = n - 1
 		m.ensureCommitVisible()
 		return m, m.reloadDetail()
 	case "ctrl+d":
-		m.cursor = min(len(m.commits)-1, m.cursor+m.mainPage())
+		m.cursor = min(n-1, m.cursor+m.mainPage())
 		m.ensureCommitVisible()
 		return m, m.reloadDetail()
 	case "ctrl+u":
@@ -427,7 +525,8 @@ func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureCommitVisible()
 		return m, m.reloadDetail()
 	case "enter", "l":
-		if m.detail != nil && m.detail.Commit.Hash == m.commits[m.cursor].Hash {
+		hash := m.selectedHash()
+		if m.detail != nil && m.detail.Commit.Hash == hash {
 			m.enterFilesView()
 			return m, m.reloadDetail()
 		}
@@ -442,6 +541,8 @@ func (m *Model) enterFilesView() {
 	if m.detail == nil {
 		return
 	}
+	m.filter = ""
+	m.filterTyping = false
 	m.main = MainFiles
 	m.files = m.detail.Files
 	m.filesCommitHash = m.detail.Commit.Hash
@@ -452,15 +553,17 @@ func (m *Model) enterFilesView() {
 }
 
 func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if len(m.files) == 0 {
-		if msg.String() == "enter" || msg.String() == "l" {
-			m.status = "no files in this commit"
+	idx := m.fileIndices()
+	n := len(idx)
+	if n == 0 {
+		if msg.String() == "enter" || msg.String() == "l" || msg.String() == "b" {
+			m.status = "no files match"
 		}
 		return m, nil
 	}
 	switch msg.String() {
 	case "j", "down":
-		if m.fileCursor < len(m.files)-1 {
+		if m.fileCursor < n-1 {
 			m.fileCursor++
 			m.ensureFileVisible()
 			return m, m.reloadDetail()
@@ -476,11 +579,11 @@ func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureFileVisible()
 		return m, m.reloadDetail()
 	case "G", "end":
-		m.fileCursor = len(m.files) - 1
+		m.fileCursor = n - 1
 		m.ensureFileVisible()
 		return m, m.reloadDetail()
 	case "ctrl+d":
-		m.fileCursor = min(len(m.files)-1, m.fileCursor+m.mainPage())
+		m.fileCursor = min(n-1, m.fileCursor+m.mainPage())
 		m.ensureFileVisible()
 		return m, m.reloadDetail()
 	case "ctrl+u":
@@ -488,24 +591,26 @@ func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureFileVisible()
 		return m, m.reloadDetail()
 	case "enter", "l":
-		path := m.files[m.fileCursor].Path
+		path := m.files[idx[m.fileCursor]].Path
 		m.historyPath = path
 		m.loadingHistory = true
 		m.status = fmt.Sprintf("loading history · %s", path)
 		return m, loadHistoryCmd(m.repo, path)
 	case "b":
-		return m.startBlame(m.files[m.fileCursor].Path, m.filesCommitHash, MainFiles)
+		return m.startBlame(m.files[idx[m.fileCursor]].Path, m.filesCommitHash, MainFiles)
 	}
 	return m, nil
 }
 
 func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if len(m.history) == 0 {
+	idx := m.historyIndices()
+	n := len(idx)
+	if n == 0 {
 		return m, nil
 	}
 	switch msg.String() {
 	case "j", "down":
-		if m.historyCursor < len(m.history)-1 {
+		if m.historyCursor < n-1 {
 			m.historyCursor++
 			m.ensureHistoryVisible()
 			return m, m.reloadDetail()
@@ -521,11 +626,11 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureHistoryVisible()
 		return m, m.reloadDetail()
 	case "G", "end":
-		m.historyCursor = len(m.history) - 1
+		m.historyCursor = n - 1
 		m.ensureHistoryVisible()
 		return m, m.reloadDetail()
 	case "ctrl+d":
-		m.historyCursor = min(len(m.history)-1, m.historyCursor+m.mainPage())
+		m.historyCursor = min(n-1, m.historyCursor+m.mainPage())
 		m.ensureHistoryVisible()
 		return m, m.reloadDetail()
 	case "ctrl+u":
@@ -533,7 +638,7 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureHistoryVisible()
 		return m, m.reloadDetail()
 	case "b", "enter", "l":
-		return m.startBlame(m.historyPath, m.history[m.historyCursor].Hash, MainHistory)
+		return m.startBlame(m.historyPath, m.history[idx[m.historyCursor]].Hash, MainHistory)
 	}
 	return m, nil
 }
@@ -543,6 +648,8 @@ func (m Model) startBlame(path, rev string, from MainView) (tea.Model, tea.Cmd) 
 		m.status = "cannot blame: missing path or revision"
 		return m, nil
 	}
+	m.filter = ""
+	m.filterTyping = false
 	m.blamePath = path
 	m.blameRev = rev
 	m.blameFrom = from
@@ -555,13 +662,15 @@ func (m Model) startBlame(path, rev string, from MainView) (tea.Model, tea.Cmd) 
 
 func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	idx := m.blameIndices()
+	n := len(idx)
 
 	// g-prefix: gg = top, gf = follow line backward
 	if m.chordG {
 		m.chordG = false
 		switch key {
 		case "g", "home":
-			if len(m.blame) == 0 {
+			if n == 0 {
 				return m, nil
 			}
 			m.blameCursor = 0
@@ -574,12 +683,12 @@ func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if len(m.blame) == 0 {
+	if n == 0 {
 		return m, nil
 	}
 	switch key {
 	case "j", "down":
-		if m.blameCursor < len(m.blame)-1 {
+		if m.blameCursor < n-1 {
 			m.blameCursor++
 			m.ensureBlameVisible()
 			return m, m.reloadDetail()
@@ -599,11 +708,11 @@ func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureBlameVisible()
 		return m, m.reloadDetail()
 	case "G", "end":
-		m.blameCursor = len(m.blame) - 1
+		m.blameCursor = n - 1
 		m.ensureBlameVisible()
 		return m, m.reloadDetail()
 	case "ctrl+d":
-		m.blameCursor = min(len(m.blame)-1, m.blameCursor+m.mainPage())
+		m.blameCursor = min(n-1, m.blameCursor+m.mainPage())
 		m.ensureBlameVisible()
 		return m, m.reloadDetail()
 	case "ctrl+u":
@@ -617,10 +726,11 @@ func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) followBlameLine() (tea.Model, tea.Cmd) {
-	if len(m.blame) == 0 {
+	idx := m.blameIndices()
+	if m.blameCursor < 0 || m.blameCursor >= len(idx) {
 		return m, nil
 	}
-	line := m.blame[m.blameCursor]
+	line := m.blame[idx[m.blameCursor]]
 	if line.PreviousHash == "" {
 		m.status = "no earlier revision for this line"
 		return m, nil
@@ -671,8 +781,9 @@ func (m *Model) reloadDetail() tea.Cmd {
 	path := ""
 	switch m.main {
 	case MainFiles:
-		if len(m.files) > 0 {
-			path = m.files[m.fileCursor].Path
+		idx := m.fileIndices()
+		if m.fileCursor >= 0 && m.fileCursor < len(idx) {
+			path = m.files[idx[m.fileCursor]].Path
 		}
 	case MainHistory:
 		path = m.historyPath
@@ -743,10 +854,66 @@ func shortHash(hash string) string {
 	return hash
 }
 
+func identityIndices(n int) []int {
+	idx := make([]int, n)
+	for i := range idx {
+		idx[i] = i
+	}
+	return idx
+}
+
+func (m Model) commitIndices() []int {
+	if m.filter == "" {
+		return identityIndices(len(m.commits))
+	}
+	return filterCommitIndices(m.commits, m.filter)
+}
+
+func (m Model) fileIndices() []int {
+	if m.filter == "" {
+		return identityIndices(len(m.files))
+	}
+	return filterFileIndices(m.files, m.filter)
+}
+
+func (m Model) historyIndices() []int {
+	if m.filter == "" {
+		return identityIndices(len(m.history))
+	}
+	return filterCommitIndices(m.history, m.filter)
+}
+
+func (m Model) blameIndices() []int {
+	if m.filter == "" {
+		return identityIndices(len(m.blame))
+	}
+	return filterBlameIndices(m.blame, m.filter)
+}
+
+func (m *Model) clampMainCursor() {
+	switch m.main {
+	case MainCommits:
+		m.cursor = min(m.cursor, max(0, len(m.commitIndices())-1))
+		m.ensureCommitVisible()
+	case MainFiles:
+		m.fileCursor = min(m.fileCursor, max(0, len(m.fileIndices())-1))
+		m.ensureFileVisible()
+	case MainHistory:
+		m.historyCursor = min(m.historyCursor, max(0, len(m.historyIndices())-1))
+		m.ensureHistoryVisible()
+	case MainBlame:
+		m.blameCursor = min(m.blameCursor, max(0, len(m.blameIndices())-1))
+		m.ensureBlameVisible()
+	}
+}
+
 // View implements tea.Model.
 func (m Model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "…"
+	}
+	if m.help.Visible() {
+		return m.help.View()
 	}
 	var b strings.Builder
 	b.WriteString(m.renderTitle())
@@ -756,25 +923,6 @@ func (m Model) View() string {
 	b.WriteString(m.renderStatus())
 	return clampFrame(b.String(), m.height, m.width)
 }
-
-var (
-	styleTitle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("180"))
-	styleMuted  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	styleFocus  = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("236"))
-	styleHeader = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Bold(true)
-	styleErr    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	styleHash   = lipgloss.NewStyle().Foreground(lipgloss.Color("110"))
-
-	styleAdd = lipgloss.NewStyle().Foreground(lipgloss.Color("#1a7f37"))
-	styleDel = lipgloss.NewStyle().Foreground(lipgloss.Color("#cf222e"))
-
-	styleAddWash = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#1a7f37")).
-			Background(lipgloss.Color("#dafbe1"))
-	styleDelWash = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#cf222e")).
-			Background(lipgloss.Color("#ffebe9"))
-)
 
 func (m Model) renderTitle() string {
 	name := filepathBase(m.repo.Path)
@@ -788,6 +936,9 @@ func (m Model) renderTitle() string {
 }
 
 func (m Model) renderStatus() string {
+	if m.filterTyping {
+		return fitWidth(styleFilter.Render(" /"+m.filter+"█")+"  "+styleMuted.Render("enter keep · esc clear"), m.width)
+	}
 	msg := m.status
 	busy := m.loading || m.loadingDetail || m.loadingHistory || m.loadingBlame
 	if m.err != "" {
@@ -795,7 +946,12 @@ func (m Model) renderStatus() string {
 	} else if busy {
 		msg = styleMuted.Render(msg + " · fetching…")
 	} else {
-		msg = styleMuted.Render(msg + "  ·  ? help  ·  q quit")
+		hints := statusHints(m.main, false)
+		if m.filter != "" {
+			msg = styleMuted.Render(msg + "  ·  " + hints)
+		} else {
+			msg = styleMuted.Render(msg + "  ·  " + hints)
+		}
 	}
 	return fitWidth(msg, m.width)
 }
@@ -859,18 +1015,22 @@ func (m Model) renderCommitPane(width, height int) string {
 		width,
 	))
 
+	idx := m.commitIndices()
 	h := height - 2
 	if h < 1 {
 		h = 1
 	}
-	end := min(len(m.commits), m.commitOffset+h)
+	end := min(len(idx), m.commitOffset+h)
 	for i := m.commitOffset; i < end; i++ {
-		row := formatCommitRow(m.commits[i])
+		row := formatCommitRow(m.commits[idx[i]])
 		if i == m.cursor {
 			lines = append(lines, cell(styleFocus, row, width))
 		} else {
 			lines = append(lines, fitWidth(row, width))
 		}
+	}
+	if len(idx) == 0 && m.filter != "" {
+		lines = append(lines, fitWidth(styleMuted.Render("(no matches)"), width))
 	}
 	return padPane(lines, width, height)
 }
@@ -882,21 +1042,26 @@ func (m Model) renderFilesPane(width, height int) string {
 		width,
 	))
 
+	idx := m.fileIndices()
 	h := height - 2
 	if h < 1 {
 		h = 1
 	}
-	end := min(len(m.files), m.fileOffset+h)
+	end := min(len(idx), m.fileOffset+h)
 	for i := m.fileOffset; i < end; i++ {
-		row := formatFileRow(m.files[i])
+		row := formatFileRow(m.files[idx[i]])
 		if i == m.fileCursor {
 			lines = append(lines, cell(styleFocus, row, width))
 		} else {
 			lines = append(lines, fitWidth(row, width))
 		}
 	}
-	if len(m.files) == 0 {
-		lines = append(lines, fitWidth(styleMuted.Render("(no files)"), width))
+	if len(idx) == 0 {
+		msg := "(no files)"
+		if m.filter != "" {
+			msg = "(no matches)"
+		}
+		lines = append(lines, fitWidth(styleMuted.Render(msg), width))
 	}
 	return padPane(lines, width, height)
 }
@@ -912,13 +1077,14 @@ func (m Model) renderHistoryPane(width, height int) string {
 		width,
 	))
 
+	idx := m.historyIndices()
 	h := height - 2
 	if h < 1 {
 		h = 1
 	}
-	end := min(len(m.history), m.historyOffset+h)
+	end := min(len(idx), m.historyOffset+h)
 	for i := m.historyOffset; i < end; i++ {
-		row := formatCommitRow(m.history[i])
+		row := formatCommitRow(m.history[idx[i]])
 		if i == m.historyCursor {
 			lines = append(lines, cell(styleFocus, row, width))
 		} else {
@@ -927,8 +1093,12 @@ func (m Model) renderHistoryPane(width, height int) string {
 	}
 	if m.loadingHistory {
 		lines = append(lines, fitWidth(styleMuted.Render(" loading…"), width))
-	} else if len(m.history) == 0 {
-		lines = append(lines, fitWidth(styleMuted.Render("(no history)"), width))
+	} else if len(idx) == 0 {
+		msg := "(no history)"
+		if m.filter != "" {
+			msg = "(no matches)"
+		}
+		lines = append(lines, fitWidth(styleMuted.Render(msg), width))
 	}
 	return padPane(lines, width, height)
 }
@@ -944,24 +1114,30 @@ func (m Model) renderBlamePane(width, height int) string {
 		width,
 	))
 
+	idx := m.blameIndices()
 	h := height - 2
 	if h < 1 {
 		h = 1
 	}
 	newest, oldest := blameAgeRange(m.blame)
-	end := min(len(m.blame), m.blameOffset+h)
+	end := min(len(idx), m.blameOffset+h)
 	for i := m.blameOffset; i < end; i++ {
-		row := formatBlameRow(m.blame[i])
+		bl := m.blame[idx[i]]
+		row := formatBlameRow(bl)
 		if i == m.blameCursor {
 			lines = append(lines, cell(styleFocus, row, width))
 		} else {
-			lines = append(lines, cell(blameAgeStyle(m.blame[i].When, newest, oldest), row, width))
+			lines = append(lines, cell(blameAgeStyle(bl.When, newest, oldest), row, width))
 		}
 	}
 	if m.loadingBlame {
 		lines = append(lines, fitWidth(styleMuted.Render(" loading…"), width))
-	} else if len(m.blame) == 0 {
-		lines = append(lines, fitWidth(styleMuted.Render("(no blame)"), width))
+	} else if len(idx) == 0 {
+		msg := "(no blame)"
+		if m.filter != "" {
+			msg = "(no matches)"
+		}
+		lines = append(lines, fitWidth(styleMuted.Render(msg), width))
 	}
 	return padPane(lines, width, height)
 }
@@ -1094,13 +1270,16 @@ func (m Model) detailLines() []string {
 	}
 	d := m.detail
 	var out []string
-	if m.main == MainBlame && len(m.blame) > 0 {
-		bl := m.blame[m.blameCursor]
-		out = append(out, styleMuted.Render(fmt.Sprintf("line %d · %s", bl.Line, relativeAge(bl.When))))
-		if bl.Summary != "" {
-			out = append(out, styleTitle.Render(bl.Summary))
+	if m.main == MainBlame {
+		idx := m.blameIndices()
+		if m.blameCursor >= 0 && m.blameCursor < len(idx) {
+			bl := m.blame[idx[m.blameCursor]]
+			out = append(out, styleMuted.Render(fmt.Sprintf("line %d · %s", bl.Line, relativeAge(bl.When))))
+			if bl.Summary != "" {
+				out = append(out, styleTitle.Render(bl.Summary))
+			}
+			out = append(out, "")
 		}
-		out = append(out, "")
 	}
 	out = append(out, styleHash.Render(d.Commit.Hash))
 	out = append(out, fmt.Sprintf("%s <%s>", d.Commit.Author, d.Commit.Email))

@@ -48,10 +48,13 @@ fluid as following foreign keys in creel.
 - [x] Bubble Tea shell: commit grid + detail (message / stat / patch)
 - [x] `j/k`, `g`/`G`, page, `Tab`, `q`, `?`
 - [x] Light-terminal diff washes (Cursor/GitHub-style)
+- [x] Binding registry → `?` help overlay
+- [x] `/` filter on the current grid
+- [x] Light chrome (GitHub-light title/focus/muted)
 - [ ] Soft graph column (like `git log --graph`, navigable)
-- [ ] Column sort + `/` fuzzy filter
-- [ ] Binding registry → help + palette (creel pattern)
-- [ ] Themes (reuse creel palette approach later)
+- [ ] Column sort
+- [ ] Command palette (`Ctrl+P`)
+- [ ] Themes picker / dark variant
 
 Files: `cmd/ore`, `internal/git`, `internal/ui`, `internal/config`, `internal/version`
 
