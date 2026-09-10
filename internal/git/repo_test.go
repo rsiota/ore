@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -99,5 +100,79 @@ func TestOpenNotRepo(t *testing.T) {
 	}
 	if !IsNotRepository(err) {
 		t.Fatalf("err = %v, want ErrNotRepository", err)
+	}
+}
+
+func TestFileHistoryFollowsRename(t *testing.T) {
+	dir := t.TempDir()
+	run := gitTestRunner(t, dir)
+
+	run("init", "-b", "main")
+	run("config", "user.email", "ore@test")
+	run("config", "user.name", "ore-test")
+
+	oldPath := filepath.Join(dir, "old.txt")
+	if err := os.WriteFile(oldPath, []byte("v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "old.txt")
+	run("commit", "-m", "add old")
+
+	run("mv", "old.txt", "new.txt")
+	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("v1\nv2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "new.txt")
+	run("commit", "-m", "rename and edit")
+
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	hist, err := repo.FileHistory(ctx, "new.txt", LogOptions{MaxCount: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) < 2 {
+		t.Fatalf("FileHistory len = %d, want >= 2 (follow rename); %#v", len(hist), hist)
+	}
+	if hist[0].Subject != "rename and edit" {
+		t.Errorf("newest = %q", hist[0].Subject)
+	}
+	if hist[len(hist)-1].Subject != "add old" {
+		t.Errorf("oldest = %q", hist[len(hist)-1].Subject)
+	}
+
+	detail, err := repo.ShowPath(ctx, hist[0].Hash, "new.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Diff == "" {
+		t.Fatal("expected path-scoped diff")
+	}
+	if strings.Contains(detail.Diff, "old.txt") && !strings.Contains(detail.Diff, "new.txt") {
+		// rename patch may mention both; at least new.txt should appear
+		t.Errorf("diff should mention new.txt: %s", detail.Diff)
+	}
+}
+
+func gitTestRunner(t *testing.T, dir string) func(args ...string) {
+	t.Helper()
+	return func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=ore-test",
+			"GIT_AUTHOR_EMAIL=ore@test",
+			"GIT_COMMITTER_NAME=ore-test",
+			"GIT_COMMITTER_EMAIL=ore@test",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
 	}
 }

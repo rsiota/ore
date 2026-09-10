@@ -89,9 +89,10 @@ type Commit struct {
 
 // LogOptions controls CommitLog.
 type LogOptions struct {
-	MaxCount int    // 0 = git default (no limit from us; we still pass a sane cap)
+	MaxCount int    // 0 = default cap
 	Path     string // optional path limiter
 	Rev      string // revision range; empty = HEAD
+	Follow   bool   // git log --follow (requires Path)
 }
 
 const defaultLogLimit = 500
@@ -112,21 +113,25 @@ func (r *Repo) CommitLog(ctx context.Context, opt LogOptions) ([]Commit, error) 
 	if rev == "" {
 		rev = "HEAD"
 	}
+	if opt.Follow && opt.Path == "" {
+		return nil, fmt.Errorf("Follow requires Path")
+	}
 
 	format := strings.Join([]string{
 		"%H", "%h", "%an", "%ae", "%aI", "%s", "%P",
 	}, fieldSep) + recSep
 
-	args := []string{
-		"log",
-		rev,
-		"--date=iso-strict",
-		"--format=" + format,
-		"-n", strconv.Itoa(limit),
-		"--",
+	args := []string{"log", rev}
+	if opt.Follow {
+		args = append(args, "--follow")
 	}
+	args = append(args,
+		"--date=iso-strict",
+		"--format="+format,
+		"-n", strconv.Itoa(limit),
+	)
 	if opt.Path != "" {
-		args = append(args[:len(args)-1], "--", opt.Path)
+		args = append(args, "--", opt.Path)
 	}
 
 	out, err := r.run(ctx, args...)
@@ -134,6 +139,16 @@ func (r *Repo) CommitLog(ctx context.Context, opt LogOptions) ([]Commit, error) 
 		return nil, err
 	}
 	return parseCommitLog(out)
+}
+
+// FileHistory returns commits that touched path, following renames (--follow).
+func (r *Repo) FileHistory(ctx context.Context, path string, opt LogOptions) ([]Commit, error) {
+	if path == "" {
+		return nil, fmt.Errorf("path required")
+	}
+	opt.Path = path
+	opt.Follow = true
+	return r.CommitLog(ctx, opt)
 }
 
 func parseCommitLog(out []byte) ([]Commit, error) {
@@ -195,8 +210,17 @@ type FileChange struct {
 	Deletions int
 }
 
-// Show returns message + numstat + patch for hash.
+// Show returns message + numstat + patch for hash (whole commit).
 func (r *Repo) Show(ctx context.Context, hash string) (CommitDetail, error) {
+	return r.show(ctx, hash, "")
+}
+
+// ShowPath is Show limited to a single path (path-scoped stat + patch).
+func (r *Repo) ShowPath(ctx context.Context, hash, path string) (CommitDetail, error) {
+	return r.show(ctx, hash, path)
+}
+
+func (r *Repo) show(ctx context.Context, hash, path string) (CommitDetail, error) {
 	var detail CommitDetail
 
 	metaOut, err := r.run(ctx, "show", "-s",
@@ -233,7 +257,16 @@ func (r *Repo) Show(ctx context.Context, hash string) (CommitDetail, error) {
 	}
 	detail.Body = body
 
-	statOut, err := r.run(ctx, "show", "--format=", "--numstat", hash)
+	numstatArgs := []string{"show", "--format=", "--numstat", "--find-renames", hash}
+	diffArgs := []string{"show", "--format=", "--patch", "--find-renames", hash}
+	statArgs := []string{"show", "--format=", "--stat", "--find-renames", hash}
+	if path != "" {
+		numstatArgs = append(numstatArgs, "--", path)
+		diffArgs = append(diffArgs, "--", path)
+		statArgs = append(statArgs, "--", path)
+	}
+
+	statOut, err := r.run(ctx, numstatArgs...)
 	if err != nil {
 		return detail, err
 	}
@@ -243,13 +276,13 @@ func (r *Repo) Show(ctx context.Context, hash string) (CommitDetail, error) {
 	detail.Commit.Additions = add
 	detail.Commit.Deletions = del
 
-	diffOut, err := r.run(ctx, "show", "--format=", "--patch", "--find-renames", hash)
+	diffOut, err := r.run(ctx, diffArgs...)
 	if err != nil {
 		return detail, err
 	}
 	detail.Diff = string(diffOut)
 
-	summaryOut, err := r.run(ctx, "show", "--format=", "--stat", hash)
+	summaryOut, err := r.run(ctx, statArgs...)
 	if err != nil {
 		return detail, err
 	}

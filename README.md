@@ -12,11 +12,11 @@ go run ./cmd/ore /path/to/repo
 go run ./cmd/ore -C /path/to/repo
 ```
 
-**Keys (Wave 0):** `j`/`k` move · `Tab` focus detail · `g`/`G` top/bottom · `Ctrl+D`/`Ctrl+U` page · `?` hint · `q` quit
+**Keys (Wave 1):** `j`/`k` move · `Enter`/`l` open (commit→files→history) · `esc` back · `Tab` focus detail · `g`/`G` top/bottom · `Ctrl+D`/`Ctrl+U` page · `?` hint · `q` quit
 
 ## Status
 
-Scaffold / Wave 0: open a repo → commit grid + live detail (message, stat, patch). See [ROADMAP.md](ROADMAP.md).
+Wave 1: commit grid → file list → path history (`--follow`), with path-scoped detail. See [ROADMAP.md](ROADMAP.md).
 
 ## Stack
 

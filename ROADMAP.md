@@ -40,13 +40,14 @@ fluid as following foreign keys in creel.
 
 ## Waves
 
-### Wave 0 — Scaffold ✅ (in progress)
+### Wave 0 — Scaffold ✅
 
 **Goal:** open a repo and browse commits with a live detail pane.
 
 - [x] `git` CLI backend: `Open`, `CommitLog`, `Show`
 - [x] Bubble Tea shell: commit grid + detail (message / stat / patch)
 - [x] `j/k`, `g`/`G`, page, `Tab`, `q`, `?`
+- [x] Light-terminal diff washes (Cursor/GitHub-style)
 - [ ] Soft graph column (like `git log --graph`, navigable)
 - [ ] Column sort + `/` fuzzy filter
 - [ ] Binding registry → help + palette (creel pattern)
@@ -54,13 +55,14 @@ fluid as following foreign keys in creel.
 
 Files: `cmd/ore`, `internal/git`, `internal/ui`, `internal/config`, `internal/version`
 
-### Wave 1 — File history
+### Wave 1 — File history ✅ (in progress)
 
-**Goal:** from a commit file (or `:history path`), show path history including renames.
+**Goal:** from a commit file (or path), show path history including renames.
 
-- [ ] File list for selected commit → Enter opens history grid
-- [ ] `git log --follow -- path`
-- [ ] Detail pane tracks the selected history row
+- [x] File list for selected commit → Enter opens history grid
+- [x] `git log --follow -- path` (`FileHistory`)
+- [x] Detail pane tracks the selected history row (path-scoped `ShowPath`)
+- [x] `esc` / `backspace` to walk back files → commits
 - [ ] Ex commands: `:history`, `:open`
 
 ### Wave 2 — Blame / archaeology grid
