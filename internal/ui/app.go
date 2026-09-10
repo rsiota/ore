@@ -1145,7 +1145,13 @@ func (m Model) renderStatus() string {
 		return fitWidth(styleFilter.Render(" /"+m.filter+"█")+"  "+styleMuted.Render("enter keep · esc clear"), m.width)
 	}
 	msg := m.status
-	busy := m.loading || m.loadingDetail || m.loadingHistory || m.loadingBlame || m.loadingRel
+	// Do not treat loadingDetail as status-bar busy: every j/k reloads detail and
+	// would flicker "· fetching…" vs the hint line. The detail pane already shows
+	// loading when there is no detail yet.
+	busy := m.loading || m.loadingHistory || m.loadingBlame || m.loadingRel
+	if m.loadingDetail && m.detail == nil {
+		busy = true
+	}
 	if m.err != "" {
 		msg = styleErr.Render(m.err)
 	} else if busy {
