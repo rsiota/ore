@@ -203,7 +203,7 @@ func hasSelectable(rows []relRow) bool {
 }
 
 func (e *RelExplorer) ensureVisible() {
-	h := max(1, e.height-2)
+	h := max(1, e.height)
 	if e.cursor < e.offset {
 		e.offset = e.cursor
 	}
@@ -257,13 +257,7 @@ func (e RelExplorer) View(focused bool) string {
 		return ""
 	}
 	var lines []string
-	title := e.title
-	if title == "" {
-		title = "relationships"
-	}
-	lines = append(lines, renderPaneTitle(title, focused, e.width))
-
-	h := e.height - 1
+	h := e.height
 	if h < 1 {
 		h = 1
 	}

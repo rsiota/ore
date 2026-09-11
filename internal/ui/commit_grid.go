@@ -16,7 +16,7 @@ const (
 	commitColCount
 )
 
-var commitColumns = []string{"HASH", "DATE", "AUTHOR", "SUBJECT"}
+var commitColumns = []string{"hash", "date", "author", "subject"}
 
 func commitCell(c git.Commit, col int) string {
 	switch col {
