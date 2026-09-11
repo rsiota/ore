@@ -39,7 +39,7 @@ func registry() []Section {
 				{"g r", []string{"g", "r"}, "relationship explorer", "gr"},
 				{"ctrl+d / ctrl+u", []string{"ctrl+d", "ctrl+u"}, "page down / up", ""},
 				{"enter", []string{"enter"}, "open (commit→files→history; history→blame)", "enter"},
-				{"l", []string{"l"}, "open (files / history / blame; not commits)", ""},
+				{"l", []string{"l"}, "open (blame from non-grid views)", ""},
 				{"b", []string{"b"}, "blame file at revision", "b"},
 				{"f / g f", []string{"f", "g"}, "follow blame line backward", "f"},
 			},
@@ -52,6 +52,37 @@ func registry() []Section {
 				{"o", []string{"o"}, "cycle sort on current column (asc→desc→off)", "o"},
 				{"/", []string{"/"}, "filter current column", "/"},
 				{"enter", []string{"enter"}, "open files for commit", "enter"},
+			},
+		},
+		{
+			Title: "Files grid",
+			Items: []Binding{
+				{"h/l · ←/→", []string{"h", "l", "left", "right"}, "previous / next column", "h/l"},
+				{"0 / $", []string{"0", "$"}, "first / last column", ""},
+				{"o", []string{"o"}, "cycle sort on current column (asc→desc→off)", "o"},
+				{"/", []string{"/"}, "filter current column", "/"},
+				{"enter", []string{"enter"}, "open path history", "enter"},
+				{"b", []string{"b"}, "blame file at revision", "b"},
+			},
+		},
+		{
+			Title: "History grid",
+			Items: []Binding{
+				{"h/l · ←/→", []string{"h", "l", "left", "right"}, "previous / next column", "h/l"},
+				{"0 / $", []string{"0", "$"}, "first / last column", ""},
+				{"o", []string{"o"}, "cycle sort on current column (asc→desc→off)", "o"},
+				{"/", []string{"/"}, "filter current column", "/"},
+				{"enter / b", []string{"enter", "b"}, "blame path at commit", "enter"},
+			},
+		},
+		{
+			Title: "Blame",
+			Items: []Binding{
+				{"h/l · ←/→", []string{"h", "l", "left", "right"}, "previous / next column", "h/l"},
+				{"0 / $", []string{"0", "$"}, "first / last column", ""},
+				{"o", []string{"o"}, "cycle sort on current column (asc→desc→off)", "o"},
+				{"/", []string{"/"}, "filter current column", "/"},
+				{"f / g f", []string{"f", "g"}, "follow line backward", "f"},
 			},
 		},
 		{
@@ -112,11 +143,11 @@ func statusHintList(main MainView, explorerOpen bool) []string {
 	case MainCommits:
 		return append([]string{"j/k"}, append(hintsForSection("Commit grid"), "gr", "tab", "?", "esc", "q")...)
 	case MainFiles:
-		return []string{"j/k", "enter", "b", "gr", "/", "tab", "?", "esc", "q"}
+		return append([]string{"j/k"}, append(hintsForSection("Files grid"), "gr", "tab", "?", "esc", "q")...)
 	case MainHistory:
-		return []string{"j/k", "enter", "b", "/", "tab", "?", "esc", "q"}
+		return append([]string{"j/k"}, append(hintsForSection("History grid"), "tab", "?", "esc", "q")...)
 	case MainBlame:
-		return []string{"j/k", "f", "gr", "/", "tab", "?", "esc", "q"}
+		return append([]string{"j/k"}, append(hintsForSection("Blame"), "gr", "tab", "?", "esc", "q")...)
 	default:
 		return []string{"j/k", "enter", "tab", "?", "esc", "q"}
 	}

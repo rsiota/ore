@@ -44,7 +44,12 @@ func TestStatusHintsAreKeyOnly(t *testing.T) {
 	if got != "gr/j/k/enter/esc/tab" {
 		t.Fatalf("explorer hints = %q", got)
 	}
-	for _, s := range []string{got, statusHints(MainFiles, false), statusHints(MainBlame, false)} {
+	for _, s := range []string{
+		statusHints(MainCommits, false),
+		statusHints(MainFiles, false),
+		statusHints(MainHistory, false),
+		statusHints(MainBlame, false),
+	} {
 		if strings.Contains(s, " ") || strings.Contains(s, "·") {
 			t.Fatalf("hints should be key-only, got %q", s)
 		}

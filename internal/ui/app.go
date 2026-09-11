@@ -9,7 +9,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mattn/go-runewidth"
 	"github.com/rsiota/ore/internal/git"
 )
 
@@ -52,27 +51,40 @@ type Model struct {
 	files            []git.FileChange
 	fileCursor       int
 	fileOffset       int
+	fileCol          int
+	fileFilterCol    int
+	fileSortCol      int
+	fileSortDir      SortDir
 	filesCommitHash  string
 	openFilesPending bool
 
-	historyPath    string
-	history        []git.Commit
-	historyCursor  int
-	historyOffset  int
-	loadingHistory bool
+	historyPath      string
+	history          []git.Commit
+	historyCursor    int
+	historyOffset    int
+	historyCol       int
+	historyFilterCol int
+	historySortCol   int
+	historySortDir   SortDir
+	loadingHistory   bool
 
-	blame          []git.BlameLine
-	blamePath      string
-	blameRev       string
-	blameCursor    int
-	blameOffset    int
-	blameFrom      MainView // MainFiles or MainHistory
+	blame           []git.BlameLine
+	blamePath       string
+	blameRev        string
+	blameCursor     int
+	blameOffset     int
+	blameCol        int
+	blameFilterCol  int
+	blameSortCol    int
+	blameSortDir    SortDir
+	blameFrom       MainView // MainFiles or MainHistory
 	blamePreferLine int
-	loadingBlame   bool
-	chordG         bool // pending g-prefix for gg / gf in blame
+	loadingBlame    bool
+	chordG          bool // pending g-prefix for gg / gf in blame
 
 	detail           *git.CommitDetail
-	detailFilterPath string // path passed to Show/ShowPath for stale checks
+	detailFilterPath string // path requested by the in-flight / latest reloadDetail
+	detailPath       string // path the current detail payload was loaded with ("" = whole commit)
 	detailExpectHash string // if set, detailLoadedMsg may target this hash (e.g. :goto)
 	detailOffset     int
 	loading          bool
@@ -103,12 +115,15 @@ type Model struct {
 // New builds a model bound to repo. Call Init via the Bubble Tea program.
 func New(repo *git.Repo) Model {
 	return Model{
-		repo:          repo,
-		focus:         FocusMain,
-		main:          MainCommits,
-		loading:       true,
-		status:        "loading commits…",
-		commitSortCol: -1,
+		repo:           repo,
+		focus:          FocusMain,
+		main:           MainCommits,
+		loading:        true,
+		status:         "loading commits…",
+		commitSortCol:  -1,
+		fileSortCol:    -1,
+		historySortCol: -1,
+		blameSortCol:   -1,
 	}
 }
 
@@ -272,13 +287,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.detail = nil
+			m.detailPath = ""
 			return m, nil
 		}
 		m.err = ""
 		d := msg.detail
 		m.detail = &d
+		m.detailPath = msg.path
 		m.detailOffset = 0
-		if m.main == MainFiles && hashMatch(d.Commit.Hash, m.filesCommitHash) {
+		// Only refresh the files grid from whole-commit Show payloads.
+		// Path-scoped ShowPath detail has a single FileChange for the detail
+		// pane and must not replace the commit's full file list.
+		if msg.path == "" && m.main == MainFiles && hashMatch(d.Commit.Hash, m.filesCommitHash) {
 			m.syncFilesFromDetail()
 		}
 		if m.openFilesPending && m.main == MainCommits {
@@ -301,6 +321,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history = msg.commits
 		m.historyCursor = 0
 		m.historyOffset = 0
+		m.historyCol = 0
+		m.historySortCol = -1
+		m.historySortDir = SortNone
 		m.filter = ""
 		m.filterTyping = false
 		m.main = MainHistory
@@ -310,6 +333,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.reloadDetail()
 		}
 		m.detail = nil
+		m.detailPath = ""
 		return m, nil
 
 	case blameLoadedMsg:
@@ -325,6 +349,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.blame = msg.lines
 		m.blameCursor = 0
 		m.blameOffset = 0
+		m.blameCol = 0
+		m.blameSortCol = -1
+		m.blameSortDir = SortNone
 		if m.blamePreferLine > 0 {
 			for i, bl := range m.blame {
 				if bl.Line >= m.blamePreferLine {
@@ -345,6 +372,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.reloadDetail()
 		}
 		m.detail = nil
+		m.detailPath = ""
 		return m, nil
 
 	case relationsLoadedMsg:
@@ -444,8 +472,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focus == FocusMain {
 			m.chordG = false
 			m.filterTyping = true
-			if m.main == MainCommits {
+			switch m.main {
+			case MainCommits:
 				m.commitFilterCol = m.commitCol
+			case MainFiles:
+				m.fileFilterCol = m.fileCol
+			case MainHistory:
+				m.historyFilterCol = m.historyCol
+			case MainBlame:
+				m.blameFilterCol = m.blameCol
 			}
 			m.status = m.filterPrompt()
 			return m, nil
@@ -583,10 +618,26 @@ func (m *Model) layoutExplorer() {
 }
 
 func (m Model) filterPrompt() string {
-	if m.main == MainCommits {
+	switch m.main {
+	case MainCommits:
 		col := m.commitFilterCol
 		if col >= 0 && col < len(commitColumns) {
 			return "filter " + commitColumns[col] + ": " + m.filter + "█"
+		}
+	case MainFiles:
+		col := m.fileFilterCol
+		if col >= 0 && col < len(fileColumns) {
+			return "filter " + fileColumns[col] + ": " + m.filter + "█"
+		}
+	case MainHistory:
+		col := m.historyFilterCol
+		if col >= 0 && col < len(commitColumns) {
+			return "filter " + commitColumns[col] + ": " + m.filter + "█"
+		}
+	case MainBlame:
+		col := m.blameFilterCol
+		if col >= 0 && col < len(blameColumns) {
+			return "filter " + blameColumns[col] + ": " + m.filter + "█"
 		}
 	}
 	return "filter: " + m.filter + "█"
@@ -657,18 +708,39 @@ func (m *Model) refreshStatus() {
 		}
 	case MainFiles:
 		m.status = fmt.Sprintf("%d files in %s", len(m.fileIndices()), shortHash(m.filesCommitHash))
+		if m.fileSortDir != SortNone && m.fileSortCol >= 0 && m.fileSortCol < len(fileColumns) {
+			m.status += fmt.Sprintf(" · sort %s%s", fileColumns[m.fileSortCol], m.fileSortDir.Arrow())
+		}
 		if m.filter != "" {
-			m.status += " · /" + m.filter
+			col := ""
+			if m.fileFilterCol >= 0 && m.fileFilterCol < len(fileColumns) {
+				col = fileColumns[m.fileFilterCol] + " "
+			}
+			m.status += " · /" + col + m.filter
 		}
 	case MainHistory:
 		m.status = fmt.Sprintf("history · %s · %d commits", m.historyPath, len(m.historyIndices()))
+		if m.historySortDir != SortNone && m.historySortCol >= 0 && m.historySortCol < len(commitColumns) {
+			m.status += fmt.Sprintf(" · sort %s%s", commitColumns[m.historySortCol], m.historySortDir.Arrow())
+		}
 		if m.filter != "" {
-			m.status += " · /" + m.filter
+			col := ""
+			if m.historyFilterCol >= 0 && m.historyFilterCol < len(commitColumns) {
+				col = commitColumns[m.historyFilterCol] + " "
+			}
+			m.status += " · /" + col + m.filter
 		}
 	case MainBlame:
 		m.status = fmt.Sprintf("blame · %s @ %s · %d lines", m.blamePath, shortHash(m.blameRev), len(m.blameIndices()))
+		if m.blameSortDir != SortNone && m.blameSortCol >= 0 && m.blameSortCol < len(blameColumns) {
+			m.status += fmt.Sprintf(" · sort %s%s", blameColumns[m.blameSortCol], m.blameSortDir.Arrow())
+		}
 		if m.filter != "" {
-			m.status += " · /" + m.filter
+			col := ""
+			if m.blameFilterCol >= 0 && m.blameFilterCol < len(blameColumns) {
+				col = blameColumns[m.blameFilterCol] + " "
+			}
+			m.status += " · /" + col + m.filter
 		}
 	}
 }
@@ -855,13 +927,19 @@ func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.reloadDetail()
 	case "enter":
 		hash := m.selectedHash()
-		if m.detail != nil && m.detail.Commit.Hash == hash {
+		// Only seed the files grid from a whole-commit Show. Path-scoped
+		// detail (after browsing files/history) still carries a single
+		// FileChange and would open a one-row files view.
+		if m.detail != nil && hashMatch(m.detail.Commit.Hash, hash) && m.detailPath == "" {
 			m.enterFilesView()
 			return m, m.reloadDetail()
 		}
 		m.openFilesPending = true
 		m.status = "opening files…"
-		return m, m.reloadDetail()
+		m.detailFilterPath = ""
+		m.loadingDetail = true
+		m.detailOffset = 0
+		return m, loadDetailCmd(m.repo, hash, "")
 	}
 	return m, nil
 }
@@ -877,6 +955,9 @@ func (m *Model) enterFilesView() {
 	m.filesCommitHash = m.detail.Commit.Hash
 	m.fileCursor = 0
 	m.fileOffset = 0
+	m.fileCol = 0
+	m.fileSortCol = -1
+	m.fileSortDir = SortNone
 	m.focus = FocusMain
 	m.status = fmt.Sprintf("%d files in %s · enter history · b blame · esc back", len(m.files), m.detail.Commit.ShortHash)
 }
@@ -884,8 +965,39 @@ func (m *Model) enterFilesView() {
 func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	idx := m.fileIndices()
 	n := len(idx)
+	switch msg.String() {
+	case "h", "left":
+		if m.fileCol > 0 {
+			m.fileCol--
+		}
+		return m, nil
+	case "l", "right":
+		if m.fileCol < fileColCount-1 {
+			m.fileCol++
+		}
+		return m, nil
+	case "0":
+		m.fileCol = 0
+		return m, nil
+	case "$":
+		m.fileCol = fileColCount - 1
+		return m, nil
+	case "o":
+		if m.fileSortCol != m.fileCol {
+			m.fileSortCol = m.fileCol
+			m.fileSortDir = SortAsc
+		} else {
+			m.fileSortDir = CycleSort(m.fileSortDir)
+			if m.fileSortDir == SortNone {
+				m.fileSortCol = -1
+			}
+		}
+		m.clampMainCursor()
+		m.refreshStatus()
+		return m, m.reloadDetail()
+	}
 	if n == 0 {
-		if msg.String() == "enter" || msg.String() == "l" || msg.String() == "b" {
+		if msg.String() == "enter" || msg.String() == "b" {
 			m.status = "no files match"
 		}
 		return m, nil
@@ -919,9 +1031,12 @@ func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.fileCursor = max(0, m.fileCursor-m.mainPage())
 		m.ensureFileVisible()
 		return m, m.reloadDetail()
-	case "enter", "l":
+	case "enter":
 		path := m.files[idx[m.fileCursor]].Path
 		m.historyPath = path
+		m.historyCol = 0
+		m.historySortCol = -1
+		m.historySortDir = SortNone
 		m.loadingHistory = true
 		m.status = fmt.Sprintf("loading history · %s", path)
 		return m, loadHistoryCmd(m.repo, path)
@@ -934,6 +1049,37 @@ func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	idx := m.historyIndices()
 	n := len(idx)
+	switch msg.String() {
+	case "h", "left":
+		if m.historyCol > 0 {
+			m.historyCol--
+		}
+		return m, nil
+	case "l", "right":
+		if m.historyCol < commitColCount-1 {
+			m.historyCol++
+		}
+		return m, nil
+	case "0":
+		m.historyCol = 0
+		return m, nil
+	case "$":
+		m.historyCol = commitColCount - 1
+		return m, nil
+	case "o":
+		if m.historySortCol != m.historyCol {
+			m.historySortCol = m.historyCol
+			m.historySortDir = SortAsc
+		} else {
+			m.historySortDir = CycleSort(m.historySortDir)
+			if m.historySortDir == SortNone {
+				m.historySortCol = -1
+			}
+		}
+		m.clampMainCursor()
+		m.refreshStatus()
+		return m, m.reloadDetail()
+	}
 	if n == 0 {
 		return m, nil
 	}
@@ -966,7 +1112,7 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.historyCursor = max(0, m.historyCursor-m.mainPage())
 		m.ensureHistoryVisible()
 		return m, m.reloadDetail()
-	case "b", "enter", "l":
+	case "b", "enter":
 		return m, m.startBlame(m.historyPath, m.history[idx[m.historyCursor]].Hash, MainHistory)
 	}
 	return m, nil
@@ -993,6 +1139,37 @@ func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	idx := m.blameIndices()
 	n := len(idx)
+	switch key {
+	case "h", "left":
+		if m.blameCol > 0 {
+			m.blameCol--
+		}
+		return m, nil
+	case "l", "right":
+		if m.blameCol < blameColCount-1 {
+			m.blameCol++
+		}
+		return m, nil
+	case "0":
+		m.blameCol = 0
+		return m, nil
+	case "$":
+		m.blameCol = blameColCount - 1
+		return m, nil
+	case "o":
+		if m.blameSortCol != m.blameCol {
+			m.blameSortCol = m.blameCol
+			m.blameSortDir = SortAsc
+		} else {
+			m.blameSortDir = CycleSort(m.blameSortDir)
+			if m.blameSortDir == SortNone {
+				m.blameSortCol = -1
+			}
+		}
+		m.clampMainCursor()
+		m.refreshStatus()
+		return m, m.reloadDetail()
+	}
 	if n == 0 {
 		return m, nil
 	}
@@ -1262,11 +1439,8 @@ func (m Model) mainPage() int {
 }
 
 func (m Model) mainListHeight() int {
-	chrome := 1 // column header (files / history / blame)
-	if m.main == MainCommits {
-		chrome = 2 // header + rule
-	}
-	return max(1, m.paneContentHeight()-chrome)
+	// All main grids use header + rule chrome.
+	return max(1, m.paneContentHeight()-2)
 }
 
 func (m Model) detailViewHeight() int {
@@ -1343,24 +1517,30 @@ func (m Model) commitIndices() []int {
 }
 
 func (m Model) fileIndices() []int {
-	if m.filter == "" {
-		return identityIndices(len(m.files))
+	col := -1
+	if m.filter != "" || m.filterTyping {
+		col = m.fileFilterCol
 	}
-	return filterFileIndices(m.files, m.filter)
+	idx := filterFileIndicesCol(m.files, m.filter, col)
+	return sortFileIndices(m.files, idx, m.fileSortCol, m.fileSortDir)
 }
 
 func (m Model) historyIndices() []int {
-	if m.filter == "" {
-		return identityIndices(len(m.history))
+	col := -1
+	if m.filter != "" || m.filterTyping {
+		col = m.historyFilterCol
 	}
-	return filterCommitIndices(m.history, m.filter)
+	idx := filterCommitIndicesCol(m.history, m.filter, col)
+	return sortCommitIndices(m.history, idx, m.historySortCol, m.historySortDir)
 }
 
 func (m Model) blameIndices() []int {
-	if m.filter == "" {
-		return identityIndices(len(m.blame))
+	col := -1
+	if m.filter != "" || m.filterTyping {
+		col = m.blameFilterCol
 	}
-	return filterBlameIndices(m.blame, m.filter)
+	idx := filterBlameIndicesCol(m.blame, m.filter, col)
+	return sortBlameIndices(m.blame, idx, m.blameSortCol, m.blameSortDir)
 }
 
 func (m *Model) clampMainCursor() {
@@ -1570,102 +1750,84 @@ func (m Model) renderCommitPane(width, height int) string {
 }
 
 func (m Model) renderFilesPane(width, height int) string {
-	var lines []string
-	lines = append(lines, cell(styleHeader,
-		fmt.Sprintf("%-4s %6s %6s %s", "ST", "+", "-", "PATH"),
-		width,
-	))
-
 	idx := m.fileIndices()
-	h := height - 1
-	if h < 1 {
-		h = 1
+	rows := make([][]string, len(idx))
+	for i, src := range idx {
+		rows[i] = fileRow(m.files[src])
 	}
-	end := min(len(idx), m.fileOffset+h)
-	for i := m.fileOffset; i < end; i++ {
-		row := formatFileRow(m.files[idx[i]])
-		if i == m.fileCursor {
-			lines = append(lines, cell(styleFocus, row, width))
-		} else {
-			lines = append(lines, fitWidth(row, width))
-		}
+	g := Grid{
+		Columns:   fileColumns,
+		Rows:      rows,
+		CursorRow: m.fileCursor,
+		CursorCol: m.fileCol,
+		OffsetRow: m.fileOffset,
+		SortCol:   m.fileSortCol,
+		SortDir:   m.fileSortDir,
+		Width:     width,
+		Height:    height,
+		Focused:   m.focus == FocusMain,
 	}
-	if len(idx) == 0 {
-		msg := "(no files)"
-		if m.filter != "" {
-			msg = "(no matches)"
-		}
-		lines = append(lines, fitWidth(styleMuted.Render(msg), width))
-	}
-	return padPane(lines, width, height)
+	g.AutoWidths()
+	g.ClampCursor()
+	return g.View()
 }
 
 func (m Model) renderHistoryPane(width, height int) string {
-	var lines []string
-	lines = append(lines, cell(styleHeader,
-		fmt.Sprintf("%-7s %-10s %-12s %s", "HASH", "DATE", "AUTHOR", "SUBJECT"),
-		width,
-	))
-
 	idx := m.historyIndices()
-	h := height - 1
-	if h < 1 {
-		h = 1
+	rows := make([][]string, len(idx))
+	for i, src := range idx {
+		rows[i] = commitRow(m.history[src])
 	}
-	end := min(len(idx), m.historyOffset+h)
-	for i := m.historyOffset; i < end; i++ {
-		row := formatCommitRow(m.history[idx[i]])
-		if i == m.historyCursor {
-			lines = append(lines, cell(styleFocus, row, width))
-		} else {
-			lines = append(lines, fitWidth(row, width))
-		}
+	g := Grid{
+		Columns:   commitColumns,
+		Rows:      rows,
+		CursorRow: m.historyCursor,
+		CursorCol: m.historyCol,
+		OffsetRow: m.historyOffset,
+		SortCol:   m.historySortCol,
+		SortDir:   m.historySortDir,
+		Width:     width,
+		Height:    height,
+		Focused:   m.focus == FocusMain,
 	}
-	if m.loadingHistory {
-		lines = append(lines, fitWidth(styleMuted.Render(" loading…"), width))
-	} else if len(idx) == 0 {
-		msg := "(no history)"
-		if m.filter != "" {
-			msg = "(no matches)"
-		}
-		lines = append(lines, fitWidth(styleMuted.Render(msg), width))
-	}
-	return padPane(lines, width, height)
+	g.AutoWidths()
+	g.ClampCursor()
+	return g.View()
 }
 
 func (m Model) renderBlamePane(width, height int) string {
-	var lines []string
-	lines = append(lines, cell(styleHeader,
-		fmt.Sprintf("%4s %-7s %-10s %-10s %s", "LINE", "COMMIT", "AGE", "AUTHOR", "CODE"),
-		width,
-	))
-
 	idx := m.blameIndices()
-	h := height - 1
-	if h < 1 {
-		h = 1
+	rows := make([][]string, len(idx))
+	for i, src := range idx {
+		rows[i] = blameRow(m.blame[src])
 	}
 	newest, oldest := blameAgeRange(m.blame)
-	end := min(len(idx), m.blameOffset+h)
-	for i := m.blameOffset; i < end; i++ {
-		bl := m.blame[idx[i]]
-		row := formatBlameRow(bl)
-		if i == m.blameCursor {
-			lines = append(lines, cell(styleFocus, row, width))
-		} else {
-			lines = append(lines, cell(blameAgeStyle(bl.When, newest, oldest), row, width))
-		}
+	g := Grid{
+		Columns:             blameColumns,
+		Rows:                rows,
+		CursorRow:           m.blameCursor,
+		CursorCol:           m.blameCol,
+		OffsetRow:           m.blameOffset,
+		SortCol:             m.blameSortCol,
+		SortDir:             m.blameSortDir,
+		Width:               width,
+		Height:              height,
+		Focused:             m.focus == FocusMain,
+		NoStripe:            true,
+		SoftCursor:          true,
+		SkipCursorPaintCols: []int{blameColCode},
+		MuteCols:            []int{blameColLine, blameColCommit, blameColAge, blameColAuthor},
+		CellStyle: func(row, col int, text string) (string, bool) {
+			if col != blameColCode || row < 0 || row >= len(idx) {
+				return "", false
+			}
+			bl := m.blame[idx[row]]
+			return blameAgeStyle(bl.When, newest, oldest).Render(text), true
+		},
 	}
-	if m.loadingBlame {
-		lines = append(lines, fitWidth(styleMuted.Render(" loading…"), width))
-	} else if len(idx) == 0 {
-		msg := "(no blame)"
-		if m.filter != "" {
-			msg = "(no matches)"
-		}
-		lines = append(lines, fitWidth(styleMuted.Render(msg), width))
-	}
-	return padPane(lines, width, height)
+	g.AutoWidths()
+	g.ClampCursor()
+	return g.View()
 }
 
 func padPane(lines []string, width, height int) string {
@@ -1673,37 +1835,6 @@ func padPane(lines []string, width, height int) string {
 		lines = append(lines, strings.Repeat(" ", width))
 	}
 	return strings.Join(lines[:height], "\n")
-}
-
-func formatCommitRow(c git.Commit) string {
-	date := c.Date.Local().Format("2006-01-02")
-	author := c.Author
-	if runewidth.StringWidth(author) > 12 {
-		author = runewidth.Truncate(author, 12, "…")
-	}
-	return fmt.Sprintf("%-7s %s %-12s %s", c.ShortHash, date, author, c.Subject)
-}
-
-func formatFileRow(f git.FileChange) string {
-	st := f.Status
-	if st == "" {
-		st = "M"
-	}
-	path := f.Path
-	if f.OldPath != "" {
-		path = f.OldPath + " → " + f.Path
-	}
-	return fmt.Sprintf("%-4s +%-5d -%-5d %s", st, f.Additions, f.Deletions, path)
-}
-
-func formatBlameRow(b git.BlameLine) string {
-	author := b.Author
-	if runewidth.StringWidth(author) > 10 {
-		author = runewidth.Truncate(author, 10, "…")
-	}
-	age := relativeAge(b.When)
-	code := strings.ReplaceAll(b.Text, "\t", "    ")
-	return fmt.Sprintf("%4d %-7s %-10s %-10s %s", b.Line, b.ShortHash, age, author, code)
 }
 
 func relativeAge(t time.Time) string {

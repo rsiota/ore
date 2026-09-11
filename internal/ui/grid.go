@@ -57,6 +57,20 @@ type Grid struct {
 	Width   int
 	Height  int
 	Focused bool
+
+	// NoStripe disables zebra striping (blame: one background language).
+	NoStripe bool
+	// SoftCursor paints the focused row with a light wash; the active cell
+	// still uses the blue cursor unless listed in SkipCursorPaintCols.
+	SoftCursor bool
+	// SkipStripeCols never receive zebra striping when striping is enabled.
+	SkipStripeCols []int
+	// SkipCursorPaintCols never get the blue cursor cell (blame code column).
+	SkipCursorPaintCols []int
+	// MuteCols render muted when not otherwise styled (quiet blame gutter).
+	MuteCols []int
+	// CellStyle styles a non-cursor cell. ok=true replaces the default plain/stripe look.
+	CellStyle func(row, col int, text string) (styled string, ok bool)
 }
 
 // SetSize updates the viewport.
@@ -223,7 +237,7 @@ func (g Grid) View() string {
 			filled++
 		}
 	}
-	// Extend zebra through unused viewport slots (creel padding rows).
+	// Extend unused viewport slots (zebra padding when striping is on).
 	for slot := filled; slot < h; slot++ {
 		lines = append(lines, g.renderEmptyRow(g.OffsetRow+slot))
 	}
@@ -284,8 +298,8 @@ func (g Grid) renderHeaderRule() string {
 func (g Grid) renderRow(rowIdx int) string {
 	row := g.Rows[rowIdx]
 	parts := make([]string, g.NumCols())
-	cursorCell := g.Focused && rowIdx == g.CursorRow
-	stripe := rowIdx%2 == 1
+	cursorRow := g.Focused && rowIdx == g.CursorRow
+	stripe := !g.NoStripe && rowIdx%2 == 1
 	for i := 0; i < g.NumCols(); i++ {
 		val := ""
 		if i < len(row) {
@@ -293,12 +307,25 @@ func (g Grid) renderRow(rowIdx int) string {
 		}
 		text := padCell(val, g.widthAt(i))
 		switch {
-		case cursorCell && i == g.CursorCol:
+		case cursorRow && i == g.CursorCol && !g.skipCursorPaint(i):
 			parts[i] = styleCursorCell.Render(text)
-		case stripe:
-			parts[i] = styleStripe.Render(text)
 		default:
-			parts[i] = text
+			if g.CellStyle != nil {
+				if styled, ok := g.CellStyle(rowIdx, i, text); ok {
+					parts[i] = styled
+					continue
+				}
+			}
+			switch {
+			case g.SoftCursor && cursorRow:
+				parts[i] = styleRowFocus.Render(text)
+			case g.muteCol(i):
+				parts[i] = styleMuted.Render(text)
+			case stripe && !g.skipStripe(i):
+				parts[i] = styleStripe.Render(text)
+			default:
+				parts[i] = text
+			}
 		}
 	}
 	sep := g.colSep()
@@ -308,14 +335,14 @@ func (g Grid) renderRow(rowIdx int) string {
 	return fitWidth(joinCols(parts, sep), g.Width)
 }
 
-// renderEmptyRow fills a viewport slot past the last data row with zebra
-// chrome so the stripe continues to the bottom of the pane.
+// renderEmptyRow fills a viewport slot past the last data row. When striping
+// is enabled, zebra continues to the bottom of the pane.
 func (g Grid) renderEmptyRow(rowIdx int) string {
-	stripe := rowIdx%2 == 1
+	stripe := !g.NoStripe && rowIdx%2 == 1
 	parts := make([]string, g.NumCols())
 	for i := 0; i < g.NumCols(); i++ {
 		blank := strings.Repeat(" ", g.widthAt(i))
-		if stripe {
+		if stripe && !g.skipStripe(i) {
 			parts[i] = styleStripe.Render(blank)
 		} else {
 			parts[i] = blank
@@ -326,6 +353,33 @@ func (g Grid) renderEmptyRow(rowIdx int) string {
 		sep = styleGridBorder.Background(colorStripe).Render("│")
 	}
 	return fitWidth(joinCols(parts, sep), g.Width)
+}
+
+func (g Grid) skipStripe(col int) bool {
+	for _, c := range g.SkipStripeCols {
+		if c == col {
+			return true
+		}
+	}
+	return false
+}
+
+func (g Grid) skipCursorPaint(col int) bool {
+	for _, c := range g.SkipCursorPaintCols {
+		if c == col {
+			return true
+		}
+	}
+	return false
+}
+
+func (g Grid) muteCol(col int) bool {
+	for _, c := range g.MuteCols {
+		if c == col {
+			return true
+		}
+	}
+	return false
 }
 
 func (g Grid) colSep() string {

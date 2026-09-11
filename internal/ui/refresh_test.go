@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/rsiota/ore/internal/git"
 )
 
@@ -115,5 +116,91 @@ func TestSyncFilesFromDetailPreservesPath(t *testing.T) {
 	}
 	if len(m.files) != 3 || m.files[2].Path != "d.go" {
 		t.Fatalf("files not synced: %+v", m.files)
+	}
+}
+
+func TestPathScopedDetailDoesNotWipeFilesGrid(t *testing.T) {
+	files := []git.FileChange{
+		{Path: "a.go"},
+		{Path: "b.go"},
+		{Path: "c.go"},
+	}
+	m := Model{
+		main:             MainFiles,
+		files:            append([]git.FileChange(nil), files...),
+		filesCommitHash:  "abcabcabc",
+		fileCursor:       0,
+		detailFilterPath: "a.go",
+		detailPath:       "a.go",
+		loadingDetail:    true,
+	}
+	next, _ := m.Update(detailLoadedMsg{
+		hash: "abcabcabc",
+		path: "a.go",
+		detail: git.CommitDetail{
+			Commit: git.Commit{Hash: "abcabcabc", ShortHash: "abcabca"},
+			Files:  []git.FileChange{{Path: "a.go"}}, // ShowPath payload
+		},
+	})
+	mm := next.(Model)
+	if len(mm.files) != 3 {
+		t.Fatalf("files wiped to %d entries: %+v", len(mm.files), mm.files)
+	}
+	if mm.detail == nil || len(mm.detail.Files) != 1 {
+		t.Fatal("detail should still be path-scoped")
+	}
+	if mm.detailPath != "a.go" {
+		t.Fatalf("detailPath = %q", mm.detailPath)
+	}
+}
+
+func TestEnterFilesIgnoresPathScopedDetail(t *testing.T) {
+	m := Model{
+		main: MainCommits,
+		commits: []git.Commit{
+			{Hash: "abcabcabc", ShortHash: "abcabca"},
+		},
+		cursor:     0,
+		detailPath: "a.go",
+		detail: &git.CommitDetail{
+			Commit: git.Commit{Hash: "abcabcabc", ShortHash: "abcabca"},
+			Files:  []git.FileChange{{Path: "a.go"}},
+		},
+	}
+	next, cmd := m.handleCommitKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	mm := next.(Model)
+	if !mm.openFilesPending {
+		t.Fatal("expected openFilesPending when detail is path-scoped")
+	}
+	if mm.main != MainCommits {
+		t.Fatalf("should stay on commits until whole Show arrives, got %v", mm.main)
+	}
+	if cmd == nil {
+		t.Fatal("expected whole-commit load cmd")
+	}
+	// Simulate whole-commit Show arriving.
+	mm.loadingDetail = true
+	mm.detailFilterPath = ""
+	next, cmd = mm.Update(detailLoadedMsg{
+		hash: "abcabcabc",
+		path: "",
+		detail: git.CommitDetail{
+			Commit: git.Commit{Hash: "abcabcabc", ShortHash: "abcabca"},
+			Files: []git.FileChange{
+				{Path: "a.go"},
+				{Path: "b.go"},
+				{Path: "c.go"},
+			},
+		},
+	})
+	mm = next.(Model)
+	if mm.main != MainFiles {
+		t.Fatalf("main = %v, want MainFiles", mm.main)
+	}
+	if len(mm.files) != 3 {
+		t.Fatalf("files = %d, want 3", len(mm.files))
+	}
+	if mm.openFilesPending {
+		t.Fatal("openFilesPending should clear")
 	}
 }
