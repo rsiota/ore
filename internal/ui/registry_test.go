@@ -1,6 +1,9 @@
 package ui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRegistryHasHelpAndFilter(t *testing.T) {
 	var (
@@ -28,6 +31,23 @@ func TestRegistryHasHelpAndFilter(t *testing.T) {
 	if !hasHelp || !hasFilter || !hasQuit || !hasRefresh {
 		t.Fatalf("registry missing core bindings: help=%v filter=%v quit=%v refresh=%v",
 			hasHelp, hasFilter, hasQuit, hasRefresh)
+	}
+}
+
+func TestStatusHintsAreKeyOnly(t *testing.T) {
+	got := statusHints(MainCommits, false)
+	if got != "j/k/h/l/o///enter/gr/tab/?/esc/q" {
+		// "/" is a hint key, so it appears as an empty group between slashes (creel-style).
+		t.Fatalf("commits hints = %q", got)
+	}
+	got = statusHints(MainCommits, true)
+	if got != "gr/j/k/enter/esc/tab" {
+		t.Fatalf("explorer hints = %q", got)
+	}
+	for _, s := range []string{got, statusHints(MainFiles, false), statusHints(MainBlame, false)} {
+		if strings.Contains(s, " ") || strings.Contains(s, "·") {
+			t.Fatalf("hints should be key-only, got %q", s)
+		}
 	}
 }
 

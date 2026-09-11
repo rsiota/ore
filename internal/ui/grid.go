@@ -203,13 +203,9 @@ func (g Grid) View() string {
 	var lines []string
 	title := g.Title
 	if title == "" {
-		title = " grid"
+		title = "grid"
 	}
-	if g.Focused {
-		lines = append(lines, cell(styleFocus, title, g.Width))
-	} else {
-		lines = append(lines, cell(styleMuted, title, g.Width))
-	}
+	lines = append(lines, renderPaneTitle(title, g.Focused, g.Width))
 
 	if g.NumCols() == 0 {
 		return padPane(lines, g.Width, g.Height)

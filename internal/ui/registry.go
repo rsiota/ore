@@ -1,5 +1,7 @@
 package ui
 
+import "strings"
+
 // Binding is one documented keybinding (help + future palette).
 type Binding struct {
 	Display string   // what the user sees, e.g. "j/k"
@@ -34,7 +36,7 @@ func registry() []Section {
 			Items: []Binding{
 				{"j/k · ↑/↓", []string{"j", "k", "up", "down"}, "move row", "j/k"},
 				{"g g / G", []string{"g", "G"}, "top / bottom", "gg/G"},
-				{"g r", []string{"g", "r"}, "relationship explorer", "g r"},
+				{"g r", []string{"g", "r"}, "relationship explorer", "gr"},
 				{"ctrl+d / ctrl+u", []string{"ctrl+d", "ctrl+u"}, "page down / up", ""},
 				{"enter", []string{"enter"}, "open (commit→files→history; history→blame)", "enter"},
 				{"l", []string{"l"}, "open (files / history / blame; not commits)", ""},
@@ -55,7 +57,7 @@ func registry() []Section {
 		{
 			Title: "Relationships (g r)",
 			Items: []Binding{
-				{"g r", []string{"g", "r"}, "open explorer for commit or blame line", "g r"},
+				{"g r", []string{"g", "r"}, "open explorer for commit or blame line", "gr"},
 				{"j/k", []string{"j", "k"}, "move in explorer", "j/k"},
 				{"enter / l", []string{"enter", "l"}, "jump to commit or file history", "enter"},
 				{"esc / h", []string{"esc", "h"}, "close explorer", "esc"},
@@ -75,40 +77,52 @@ func registry() []Section {
 			Title: "Filter",
 			Items: []Binding{
 				{"/", []string{"/"}, "start filter (commits: active column)", "/"},
-				{"enter", []string{"enter"}, "keep filter, leave input", ""},
-				{"esc", []string{"esc"}, "clear filter", ""},
+				{"enter", []string{"enter"}, "keep filter, leave input", "enter"},
+				{"esc", []string{"esc"}, "clear filter", "esc"},
 				{"backspace", []string{"backspace"}, "delete character", ""},
 			},
 		},
 	}
 }
 
-// statusHints returns a short hint string for the current context.
-func statusHints(main MainView, explorerOpen bool) string {
-	if explorerOpen {
-		return "enter open · esc close · tab focus · ?/help"
+// hintsForSection collects non-empty Hint strings from a registry section.
+func hintsForSection(title string) []string {
+	for _, sec := range registry() {
+		if sec.Title != title {
+			continue
+		}
+		var hints []string
+		for _, b := range sec.Items {
+			if b.Hint != "" {
+				hints = append(hints, b.Hint)
+			}
+		}
+		return hints
 	}
-	parts := []string{":cmd", "g r relations", "?/help", "/ filter", "esc back", "q quit"}
-	switch main {
-	case MainCommits:
-		parts = append([]string{"h/l cols", "o sort", "enter files"}, parts...)
-	case MainFiles:
-		parts = append([]string{"enter history", "b blame"}, parts...)
-	case MainHistory:
-		parts = append([]string{"enter/b blame"}, parts...)
-	case MainBlame:
-		parts = append([]string{"f follow"}, parts...)
-	}
-	return stringsJoinHints(parts)
+	return nil
 }
 
-func stringsJoinHints(parts []string) string {
-	out := ""
-	for i, p := range parts {
-		if i > 0 {
-			out += " · "
-		}
-		out += p
+// statusHintList returns compact, key-only hint groups for the status bar
+// (creel-style: j/k, enter, gr, …).
+func statusHintList(main MainView, explorerOpen bool) []string {
+	if explorerOpen {
+		return hintsForSection("Relationships (g r)")
 	}
-	return out
+	switch main {
+	case MainCommits:
+		return append([]string{"j/k"}, append(hintsForSection("Commit grid"), "gr", "tab", "?", "esc", "q")...)
+	case MainFiles:
+		return []string{"j/k", "enter", "b", "gr", "/", "tab", "?", "esc", "q"}
+	case MainHistory:
+		return []string{"j/k", "enter", "b", "/", "tab", "?", "esc", "q"}
+	case MainBlame:
+		return []string{"j/k", "f", "gr", "/", "tab", "?", "esc", "q"}
+	default:
+		return []string{"j/k", "enter", "tab", "?", "esc", "q"}
+	}
+}
+
+// statusHints joins contextual key hints with "/" like creel's status bar.
+func statusHints(main MainView, explorerOpen bool) string {
+	return strings.Join(statusHintList(main, explorerOpen), "/")
 }

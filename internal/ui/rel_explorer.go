@@ -259,13 +259,9 @@ func (e RelExplorer) View(focused bool) string {
 	var lines []string
 	title := e.title
 	if title == "" {
-		title = " relationships"
+		title = "relationships"
 	}
-	if focused {
-		lines = append(lines, cell(styleFocus, title, e.width))
-	} else {
-		lines = append(lines, cell(styleMuted, title, e.width))
-	}
+	lines = append(lines, renderPaneTitle(title, focused, e.width))
 
 	h := e.height - 1
 	if h < 1 {

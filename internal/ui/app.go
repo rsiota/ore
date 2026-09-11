@@ -572,13 +572,14 @@ func (m *Model) jumpToCommit(hash string) bool {
 }
 
 func (m *Model) layoutExplorer() {
+	h := m.paneContentHeight()
 	if m.width < 80 {
-		m.explorer.SetSize(m.width, m.bodyHeight())
+		m.explorer.SetSize(max(1, m.width-borderOverhead), h)
 		return
 	}
 	cw := m.mainPaneWidth()
-	dw := m.width - cw - 1
-	m.explorer.SetSize(dw, m.bodyHeight())
+	dw := m.width - cw
+	m.explorer.SetSize(max(1, dw-borderOverhead), h)
 }
 
 func (m Model) filterPrompt() string {
@@ -1261,22 +1262,47 @@ func (m Model) mainPage() int {
 }
 
 func (m Model) mainListHeight() int {
-	return max(1, m.bodyHeight()-2)
+	return max(1, m.paneContentHeight()-2)
 }
 
 func (m Model) detailViewHeight() int {
-	return max(1, m.bodyHeight())
+	return max(1, m.paneContentHeight())
 }
 
 func (m Model) bodyHeight() int {
-	return max(1, m.height-3)
+	return max(1, m.height-1)
+}
+
+// paneContentHeight is the inner height available inside a bordered pane.
+func (m Model) paneContentHeight() int {
+	return max(1, m.bodyHeight()-borderOverhead)
 }
 
 func (m Model) mainPaneWidth() int {
 	if m.width < 80 {
 		return max(20, m.width)
 	}
-	return max(40, m.width*55/100)
+	return max(40, m.width/2)
+}
+
+func (m Model) borderForFocus(f Focus) lipgloss.Color {
+	if m.focus == f {
+		return colorPrimary
+	}
+	return colorBorderUnfocused
+}
+
+// framePane wraps pane content in a creel-style square border that turns
+// primary blue when that pane holds focus.
+func (m Model) framePane(content string, outerW, outerH int, focus Focus) string {
+	innerW := max(1, outerW-borderOverhead)
+	innerH := max(1, outerH-borderOverhead)
+	return lipgloss.NewStyle().
+		Width(innerW).
+		Height(innerH).
+		Border(panelBorder()).
+		BorderForeground(m.borderForFocus(focus)).
+		Render(content)
 }
 
 func shortHash(hash string) string {
@@ -1359,23 +1385,10 @@ func (m Model) View() string {
 		return m.help.View()
 	}
 	var b strings.Builder
-	b.WriteString(m.renderTitle())
-	b.WriteByte('\n')
 	b.WriteString(m.renderBody())
 	b.WriteByte('\n')
 	b.WriteString(m.renderStatus())
 	return clampFrame(b.String(), m.height, m.width)
-}
-
-func (m Model) renderTitle() string {
-	name := filepathBase(m.repo.Path)
-	left := styleTitle.Render("ore") + "  " + styleMuted.Render(name)
-	right := styleMuted.Render(fmt.Sprintf("%s @ %s", m.branch, m.head))
-	pad := m.width - lipgloss.Width(left) - lipgloss.Width(right)
-	if pad < 1 {
-		return fitWidth(left, m.width)
-	}
-	return left + strings.Repeat(" ", pad) + right
 }
 
 func (m Model) renderStatus() string {
@@ -1385,23 +1398,49 @@ func (m Model) renderStatus() string {
 	if m.filterTyping {
 		return fitWidth(styleFilter.Render(" "+m.filterPrompt())+"  "+styleMuted.Render("enter keep · esc clear"), m.width)
 	}
-	msg := m.status
-	// Do not treat loadingDetail as status-bar busy: every j/k reloads detail and
-	// would flicker "· fetching…" vs the hint line. The detail pane already shows
-	// loading when there is no detail yet.
+
+	repo := filepathBase(m.repo.Path)
+	leftParts := []string{styleTitle.Render(repo)}
+	if m.branch != "" || m.head != "" {
+		leftParts = append(leftParts, styleMuted.Render(fmt.Sprintf("%s @ %s", m.branch, m.head)))
+	}
+
 	busy := m.loading || m.loadingHistory || m.loadingBlame || m.loadingRel
 	if m.loadingDetail && m.detail == nil {
 		busy = true
 	}
-	if m.err != "" {
-		msg = styleErr.Render(m.err)
-	} else if busy {
-		msg = styleMuted.Render(msg + " · fetching…")
-	} else {
-		hints := statusHints(m.main, m.explorer.Opened())
-		msg = styleMuted.Render(msg + "  ·  " + hints)
+
+	var hints string
+	switch {
+	case m.err != "":
+		leftParts = append(leftParts, styleErr.Render(m.err))
+	case busy:
+		leftParts = append(leftParts, styleMuted.Render(m.status+" · fetching…"))
+	default:
+		if m.status != "" {
+			leftParts = append(leftParts, styleMuted.Render(m.status))
+		}
+		hints = styleMuted.Render(statusHints(m.main, m.explorer.Opened()))
 	}
-	return fitWidth(msg, m.width)
+
+	left := strings.Join(leftParts, styleMuted.Render(" · "))
+	if hints == "" {
+		return fitWidth(left, m.width)
+	}
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(hints)
+	if gap < 1 {
+		// Prefer keeping the repo + status; trim hints if needed.
+		avail := m.width - lipgloss.Width(left) - 1
+		if avail < 8 {
+			return fitWidth(left, m.width)
+		}
+		hints = styleMuted.Render(fitWidth(statusHints(m.main, m.explorer.Opened()), avail))
+		gap = m.width - lipgloss.Width(left) - lipgloss.Width(hints)
+		if gap < 1 {
+			gap = 1
+		}
+	}
+	return left + strings.Repeat(" ", gap) + hints
 }
 
 func (m Model) renderBody() string {
@@ -1409,25 +1448,28 @@ func (m Model) renderBody() string {
 	if m.loading && len(m.commits) == 0 {
 		return fitWidth(styleMuted.Render(" loading commit history…"), m.width)
 	}
+	innerH := m.paneContentHeight()
 	if m.width < 80 {
+		innerW := max(1, m.width-borderOverhead)
 		if m.explorer.Opened() {
-			m.explorer.SetSize(m.width, h)
-			return m.explorer.View(m.focus == FocusExplorer)
+			m.explorer.SetSize(innerW, innerH)
+			return m.framePane(m.explorer.View(m.focus == FocusExplorer), m.width, h, FocusExplorer)
 		}
-		return m.renderMainPane(m.width, h)
+		return m.framePane(m.renderMainPane(innerW, innerH), m.width, h, FocusMain)
 	}
 	cw := m.mainPaneWidth()
-	dw := m.width - cw - 1
-	left := m.renderMainPane(cw, h)
+	dw := m.width - cw
+	leftInner := max(1, cw-borderOverhead)
+	rightInner := max(1, dw-borderOverhead)
+	left := m.framePane(m.renderMainPane(leftInner, innerH), cw, h, FocusMain)
 	var right string
 	if m.explorer.Opened() {
-		m.explorer.SetSize(dw, h)
-		right = m.explorer.View(m.focus == FocusExplorer)
+		m.explorer.SetSize(rightInner, innerH)
+		right = m.framePane(m.explorer.View(m.focus == FocusExplorer), dw, h, FocusExplorer)
 	} else {
-		right = m.renderDetailPane(dw, h)
+		right = m.framePane(m.renderDetailPane(rightInner, innerH), dw, h, FocusDetail)
 	}
-	sep := styleMuted.Width(1).Render("│")
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, sep, right)
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 }
 
 func (m Model) renderMainPane(width, height int) string {
@@ -1446,24 +1488,31 @@ func (m Model) renderMainPane(width, height int) string {
 func (m Model) mainTitle() string {
 	switch m.main {
 	case MainFiles:
-		return " files"
+		return "files"
 	case MainHistory:
-		return " history"
+		return "history"
 	case MainBlame:
-		return " blame"
+		return "blame"
 	default:
-		return " commits"
+		return "commits"
 	}
 }
 
 func (m Model) renderPaneHeader(width int, title string) []string {
-	var lines []string
-	if m.focus == FocusMain {
-		lines = append(lines, cell(styleFocus, title, width))
+	return []string{renderPaneTitle(title, m.focus == FocusMain, width)}
+}
+
+// renderPaneTitle draws a creel-style pane label: blue/white pill on the word
+// when focused, muted text when not — never a full-width wash.
+func renderPaneTitle(title string, focused bool, width int) string {
+	title = strings.TrimSpace(title)
+	var label string
+	if focused {
+		label = styleSelected.Render(title)
 	} else {
-		lines = append(lines, cell(styleMuted, title, width))
+		label = styleMuted.Padding(0, 1).Render(title)
 	}
-	return lines
+	return fitWidth(label, width)
 }
 
 func (m Model) renderCommitPane(width, height int) string {
@@ -1525,7 +1574,7 @@ func (m Model) renderFilesPane(width, height int) string {
 func (m Model) renderHistoryPane(width, height int) string {
 	title := m.mainTitle()
 	if m.historyPath != "" {
-		title = " history · " + m.historyPath
+		title = "history · " + m.historyPath
 	}
 	lines := m.renderPaneHeader(width, title)
 	lines = append(lines, cell(styleHeader,
@@ -1560,9 +1609,9 @@ func (m Model) renderHistoryPane(width, height int) string {
 }
 
 func (m Model) renderBlamePane(width, height int) string {
-	title := " blame"
+	title := "blame"
 	if m.blamePath != "" {
-		title = fmt.Sprintf(" blame · %s @ %s", m.blamePath, shortHash(m.blameRev))
+		title = fmt.Sprintf("blame · %s @ %s", m.blamePath, shortHash(m.blameRev))
 	}
 	lines := m.renderPaneHeader(width, title)
 	lines = append(lines, cell(styleHeader,
@@ -1698,12 +1747,7 @@ func blameAgeStyle(when, newest, oldest time.Time) lipgloss.Style {
 }
 
 func (m Model) renderDetailPane(width, height int) string {
-	var lines []string
-	if m.focus == FocusDetail {
-		lines = append(lines, cell(styleFocus, " detail", width))
-	} else {
-		lines = append(lines, cell(styleMuted, " detail", width))
-	}
+	lines := []string{renderPaneTitle("detail", m.focus == FocusDetail, width)}
 
 	body := m.detailLines()
 	h := height - 1
