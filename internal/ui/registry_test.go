@@ -4,9 +4,10 @@ import "testing"
 
 func TestRegistryHasHelpAndFilter(t *testing.T) {
 	var (
-		hasHelp   bool
-		hasFilter bool
-		hasQuit   bool
+		hasHelp    bool
+		hasFilter  bool
+		hasQuit    bool
+		hasRefresh bool
 	)
 	for _, sec := range registry() {
 		for _, b := range sec.Items {
@@ -18,12 +19,15 @@ func TestRegistryHasHelpAndFilter(t *testing.T) {
 					hasFilter = true
 				case "q":
 					hasQuit = true
+				case "ctrl+r":
+					hasRefresh = true
 				}
 			}
 		}
 	}
-	if !hasHelp || !hasFilter || !hasQuit {
-		t.Fatalf("registry missing core bindings: help=%v filter=%v quit=%v", hasHelp, hasFilter, hasQuit)
+	if !hasHelp || !hasFilter || !hasQuit || !hasRefresh {
+		t.Fatalf("registry missing core bindings: help=%v filter=%v quit=%v refresh=%v",
+			hasHelp, hasFilter, hasQuit, hasRefresh)
 	}
 }
 

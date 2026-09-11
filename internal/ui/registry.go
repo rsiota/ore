@@ -22,6 +22,7 @@ func registry() []Section {
 			Items: []Binding{
 				{"?", []string{"?"}, "toggle help", "?"},
 				{":", []string{":"}, "ex command line", ":"},
+				{"ctrl+r", []string{"ctrl+r"}, "refresh commit log", ""},
 				{"q / ctrl+c", []string{"q", "ctrl+c"}, "quit", "q"},
 				{"tab", []string{"tab"}, "focus main ↔ detail", "tab"},
 				{"esc / backspace", []string{"esc", "backspace"}, "go back / close overlay", "esc"},

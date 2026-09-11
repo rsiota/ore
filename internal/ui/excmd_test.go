@@ -17,6 +17,12 @@ func TestExLookup(t *testing.T) {
 	if exLookup("go") == nil {
 		t.Fatal("expected :go alias")
 	}
+	if exLookup("refresh") == nil {
+		t.Fatal("expected :refresh")
+	}
+	if exLookup("reload") == nil {
+		t.Fatal("expected :reload alias")
+	}
 	if exLookup("nope") != nil {
 		t.Fatal("expected nil for unknown")
 	}
@@ -53,7 +59,7 @@ func TestExGotoAmbiguous(t *testing.T) {
 func TestExCommandsListedInHelp(t *testing.T) {
 	h := HelpPanel{visible: true, width: 80, height: 40}
 	rows := strings.Join(h.rows(), "\n")
-	for _, want := range []string{":blame", ":history", ":goto", "Commands"} {
+	for _, want := range []string{":blame", ":history", ":goto", ":refresh", "Commands"} {
 		if !strings.Contains(rows, want) {
 			t.Fatalf("help missing %q", want)
 		}

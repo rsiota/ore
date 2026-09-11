@@ -42,6 +42,14 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"refresh", "reload"},
+			desc:  "reload the commit log and current view",
+			usage: ":refresh",
+			run: func(m *Model, _ []string) tea.Cmd {
+				return m.refresh()
+			},
+		},
+		{
 			verbs: []string{"help", "h"},
 			desc:  "open the help overlay",
 			usage: ":help",

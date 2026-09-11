@@ -93,6 +93,11 @@ type Model struct {
 
 	explorer   RelExplorer
 	loadingRel bool
+
+	// refreshPreferHash, when set, marks commitsLoadedMsg as a refresh rather
+	// than the initial load: restore the commit cursor to this hash and keep
+	// the current main view.
+	refreshPreferHash string
 }
 
 // New builds a model bound to repo. Call Init via the Bubble Tea program.
@@ -235,9 +240,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "error"
 			return m, nil
 		}
+		prefer := m.refreshPreferHash
+		m.refreshPreferHash = ""
 		m.commits = msg.commits
 		m.branch = msg.branch
 		m.head = msg.head
+		if prefer != "" {
+			m.restoreCommitCursor(prefer)
+			m.status = fmt.Sprintf("refreshed · %d commits", len(m.commits))
+			return m, m.afterRefreshCmds()
+		}
 		m.cursor = 0
 		m.commitOffset = 0
 		m.main = MainCommits
@@ -266,6 +278,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		d := msg.detail
 		m.detail = &d
 		m.detailOffset = 0
+		if m.main == MainFiles && hashMatch(d.Commit.Hash, m.filesCommitHash) {
+			m.syncFilesFromDetail()
+		}
 		if m.openFilesPending && m.main == MainCommits {
 			m.openFilesPending = false
 			m.enterFilesView()
@@ -402,6 +417,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
+	case "ctrl+r":
+		m.chordG = false
+		return m, m.refresh()
 	case "tab":
 		m.chordG = false
 		return m.cycleFocus()
@@ -1081,6 +1099,133 @@ func (m *Model) reloadDetail() tea.Cmd {
 	m.loadingDetail = true
 	m.detailOffset = 0
 	return loadDetailCmd(m.repo, hash, path)
+}
+
+// refresh reloads the commit log (and re-fetches the current view), matching
+// ctrl+r. Shared by the keybinding and :refresh so the two cannot drift.
+func (m *Model) refresh() tea.Cmd {
+	if m.loading {
+		return nil
+	}
+	m.chordG = false
+	m.refreshPreferHash = m.commitListHash()
+	m.loading = true
+	m.err = ""
+	m.status = "refreshing…"
+	return loadCommitsCmd(m.repo)
+}
+
+func (m Model) commitListHash() string {
+	idx := m.commitIndices()
+	if m.cursor >= 0 && m.cursor < len(idx) {
+		return m.commits[idx[m.cursor]].Hash
+	}
+	if m.main == MainFiles {
+		return m.filesCommitHash
+	}
+	return ""
+}
+
+func (m *Model) restoreCommitCursor(hash string) {
+	if hash == "" {
+		m.cursor = 0
+		m.commitOffset = 0
+		return
+	}
+	idx := m.commitIndices()
+	for i, src := range idx {
+		if hashMatch(m.commits[src].Hash, hash) {
+			m.cursor = i
+			m.ensureCommitVisible()
+			return
+		}
+	}
+	m.cursor = 0
+	m.commitOffset = 0
+}
+
+// afterRefreshCmds reloads the active view after a commit-log refresh.
+func (m *Model) afterRefreshCmds() tea.Cmd {
+	var cmds []tea.Cmd
+	switch m.main {
+	case MainHistory:
+		if m.historyPath != "" {
+			m.loadingHistory = true
+			cmds = append(cmds, loadHistoryCmd(m.repo, m.historyPath))
+		}
+	case MainBlame:
+		if m.blamePath != "" {
+			idx := m.blameIndices()
+			if m.blameCursor >= 0 && m.blameCursor < len(idx) {
+				m.blamePreferLine = m.blame[idx[m.blameCursor]].Line
+			}
+			m.loadingBlame = true
+			cmds = append(cmds, loadBlameCmd(m.repo, m.blamePath, m.blameRev))
+		} else if c := m.reloadDetail(); c != nil {
+			cmds = append(cmds, c)
+		}
+	default:
+		if c := m.reloadDetail(); c != nil {
+			cmds = append(cmds, c)
+		}
+	}
+	if m.explorer.Opened() {
+		if c := m.reloadRelationsCmd(); c != nil {
+			cmds = append(cmds, c)
+		}
+	}
+	switch len(cmds) {
+	case 0:
+		return nil
+	case 1:
+		return cmds[0]
+	default:
+		return tea.Batch(cmds...)
+	}
+}
+
+func (m *Model) reloadRelationsCmd() tea.Cmd {
+	m.loadingRel = true
+	if m.main == MainBlame {
+		idx := m.blameIndices()
+		if m.blameCursor < 0 || m.blameCursor >= len(idx) {
+			m.loadingRel = false
+			return nil
+		}
+		line := m.blame[idx[m.blameCursor]]
+		return loadLineRelationsCmd(m.repo, m.blamePath, m.blameRev, line)
+	}
+	hash := m.selectedHash()
+	if hash == "" {
+		m.loadingRel = false
+		return nil
+	}
+	return loadCommitRelationsCmd(m.repo, hash)
+}
+
+// syncFilesFromDetail refreshes the files grid from a newly loaded detail
+// payload, keeping the cursor on the same path when possible.
+func (m *Model) syncFilesFromDetail() {
+	if m.detail == nil {
+		return
+	}
+	prefer := ""
+	idx := m.fileIndices()
+	if m.fileCursor >= 0 && m.fileCursor < len(idx) {
+		prefer = m.files[idx[m.fileCursor]].Path
+	}
+	m.files = m.detail.Files
+	m.filesCommitHash = m.detail.Commit.Hash
+	m.fileCursor = 0
+	if prefer != "" {
+		for i, src := range m.fileIndices() {
+			if m.files[src].Path == prefer {
+				m.fileCursor = i
+				break
+			}
+		}
+	}
+	m.ensureFileVisible()
 }
 
 func (m *Model) ensureCommitVisible() {
