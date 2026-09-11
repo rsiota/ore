@@ -3,7 +3,7 @@ package ui
 import "github.com/charmbracelet/lipgloss"
 
 // Light / GitHub-light chrome — readable on pale terminal themes.
-// Pane borders follow creel: primary blue when focused, faded grey otherwise.
+// Selection chrome is neutral slate so semantic colours (diff, age, hash) stand out.
 const borderOverhead = 2
 
 func panelBorder() lipgloss.Border {
@@ -11,30 +11,31 @@ func panelBorder() lipgloss.Border {
 }
 
 var (
-	colorPrimary         = lipgloss.Color("#0969da")
-	colorBorderUnfocused = lipgloss.Color("#e1e4e8")
-	colorBorder          = lipgloss.Color("#d0d7de") // inner grid lines (creel light border)
+	colorPrimary         = lipgloss.Color("#24292f") // slate fill (cursor cell, tabs)
+	colorBorderFocused   = lipgloss.Color("#6e7781") // focused pane frame
+	colorBorderUnfocused = lipgloss.Color("#afb8c1") // unfocused pane frame
+	colorBorder          = lipgloss.Color("#d0d7de") // inner grid lines
 	colorBg              = lipgloss.Color("#ffffff")
 	colorRowFocusBg      = lipgloss.Color("#eaeef2")
-	colorStripe          = lipgloss.Color("#f5f7f9") // zebra row tint (creel light)
+	colorStripe          = lipgloss.Color("#fafbfc") // zebra row tint (subtle)
 
 	styleTitle = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
 	styleMuted = lipgloss.NewStyle().Foreground(lipgloss.Color("#656d76"))
-	// List / soft focus wash (files, history, explorer selection).
+	// List / soft focus wash (explorer selection) — neutral, not accent blue.
 	styleFocus = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#1f2328")).
-			Background(lipgloss.Color("#ddf4ff"))
-	// Grid cursor cell — creel results: white text on primary blue.
+			Background(colorRowFocusBg)
+	// Grid cursor cell — white text on slate.
 	styleCursorCell = lipgloss.NewStyle().
 				Foreground(colorBg).
 				Background(colorPrimary)
-	// Pane title when focused — creel selected-table chrome: blue pill, white text, word-scoped.
+	// Pane / status tab when focused — slate pill, white text.
 	styleSelected = lipgloss.NewStyle().
 			Foreground(colorBg).
 			Background(colorPrimary).
 			Padding(0, 1)
 	styleHeader = lipgloss.NewStyle().Foreground(lipgloss.Color("#656d76")).Bold(true)
-	// Grid column headers — creel: primary blue, bold; selected col underlines the word only.
+	// Grid column headers — slate, bold; selected col underlines the word only.
 	styleGridHeader = lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
 	styleGridBorder = lipgloss.NewStyle().Foreground(colorBorder)
 	styleStripe     = lipgloss.NewStyle().Background(colorStripe)
@@ -54,7 +55,7 @@ var (
 	styleHelpTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffffff")).Background(colorPrimary)
 	styleHelpSection = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
 	styleFilter      = lipgloss.NewStyle().Foreground(lipgloss.Color("#1f2328")).Background(lipgloss.Color("#fff8c5"))
-	// Cursor row (non-active cell) — creel colorCursorRow wash on light themes.
+	// Soft row wash on focused blame / related rows.
 	styleRowFocus = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#1f2328")).
 			Background(colorRowFocusBg)

@@ -1465,13 +1465,13 @@ func (m Model) mainPaneWidth() int {
 
 func (m Model) borderForFocus(f Focus) lipgloss.Color {
 	if m.focus == f {
-		return colorPrimary
+		return colorBorderFocused
 	}
 	return colorBorderUnfocused
 }
 
-// framePane wraps pane content in a creel-style square border that turns
-// primary blue when that pane holds focus.
+// framePane wraps pane content in a square border; focused panes use a
+// stronger slate frame so selection chrome stays neutral.
 func (m Model) framePane(content string, outerW, outerH int, focus Focus) string {
 	innerW := max(1, outerW-borderOverhead)
 	innerH := max(1, outerH-borderOverhead)
