@@ -14,7 +14,7 @@ go run ./cmd/ore -C /path/to/repo
 
 **Keys:** `:` commands · `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `esc` back · `q` quit
 
-**Commit grid:** `h`/`l` columns · `o` cycle sort · `/` filters the active column
+**Commit grid:** soft graph · `h`/`l` columns · `o` cycle sort · `/` filters the active column
 
 ## Status
 

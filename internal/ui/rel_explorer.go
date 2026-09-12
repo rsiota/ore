@@ -38,8 +38,8 @@ type RelExplorer struct {
 	height int
 }
 
-func (e *RelExplorer) Open()  { e.open = true }
-func (e *RelExplorer) Close() { e.open = false; e.rows = nil; e.cursor = 0; e.offset = 0 }
+func (e *RelExplorer) Open()       { e.open = true }
+func (e *RelExplorer) Close()      { e.open = false; e.rows = nil; e.cursor = 0; e.offset = 0 }
 func (e RelExplorer) Opened() bool { return e.open }
 
 func (e *RelExplorer) SetSize(w, h int) {
@@ -107,7 +107,7 @@ func (e *RelExplorer) LoadLine(rel git.LineRelations) {
 	var rows []relRow
 	bl := rel.Line
 	rows = append(rows, relRow{
-		kind: relMeta,
+		kind:  relMeta,
 		label: fmt.Sprintf("line %d · %s  %s", bl.Line, bl.ShortHash, bl.Summary),
 	})
 	rows = append(rows, relRow{kind: relMeta, depth: 1, label: truncateRunes(bl.Text, 60)})

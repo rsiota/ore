@@ -121,6 +121,7 @@ func New(repo *git.Repo) Model {
 		loading:        true,
 		status:         "loading commits…",
 		commitSortCol:  -1,
+		commitCol:      commitColHash,
 		fileSortCol:    -1,
 		historySortCol: -1,
 		blameSortCol:   -1,
@@ -321,7 +322,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history = msg.commits
 		m.historyCursor = 0
 		m.historyOffset = 0
-		m.historyCol = 0
+		m.historyCol = commitColHash
 		m.historySortCol = -1
 		m.historySortDir = SortNone
 		m.filter = ""
@@ -880,6 +881,9 @@ func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.commitCol = commitColCount - 1
 		return m, nil
 	case "o":
+		if m.commitCol == commitColGraph {
+			return m, nil
+		}
 		if m.commitSortCol != m.commitCol {
 			m.commitSortCol = m.commitCol
 			m.commitSortDir = SortAsc
@@ -1034,7 +1038,7 @@ func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		path := m.files[idx[m.fileCursor]].Path
 		m.historyPath = path
-		m.historyCol = 0
+		m.historyCol = commitColHash
 		m.historySortCol = -1
 		m.historySortDir = SortNone
 		m.loadingHistory = true
@@ -1067,6 +1071,9 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.historyCol = commitColCount - 1
 		return m, nil
 	case "o":
+		if m.historyCol == commitColGraph {
+			return m, nil
+		}
 		if m.historySortCol != m.historyCol {
 			m.historySortCol = m.historyCol
 			m.historySortDir = SortAsc
@@ -1728,9 +1735,10 @@ func renderStatusTab(title string, focused bool) string {
 
 func (m Model) renderCommitPane(width, height int) string {
 	idx := m.commitIndices()
+	graphs := commitGraphLines(m.commits, idx, m.commitSortDir)
 	rows := make([][]string, len(idx))
 	for i, src := range idx {
-		rows[i] = commitRow(m.commits[src])
+		rows[i] = commitRow(m.commits[src], graphs[i])
 	}
 	g := Grid{
 		Columns:   commitColumns,
@@ -1743,6 +1751,7 @@ func (m Model) renderCommitPane(width, height int) string {
 		Width:     width,
 		Height:    height,
 		Focused:   m.focus == FocusMain,
+		CellStyle: styleCommitGraphCell,
 	}
 	g.AutoWidths()
 	g.ClampCursor()
@@ -1774,9 +1783,10 @@ func (m Model) renderFilesPane(width, height int) string {
 
 func (m Model) renderHistoryPane(width, height int) string {
 	idx := m.historyIndices()
+	graphs := commitGraphLines(m.history, idx, m.historySortDir)
 	rows := make([][]string, len(idx))
 	for i, src := range idx {
-		rows[i] = commitRow(m.history[src])
+		rows[i] = commitRow(m.history[src], graphs[i])
 	}
 	g := Grid{
 		Columns:   commitColumns,
@@ -1789,6 +1799,7 @@ func (m Model) renderHistoryPane(width, height int) string {
 		Width:     width,
 		Height:    height,
 		Focused:   m.focus == FocusMain,
+		CellStyle: styleCommitGraphCell,
 	}
 	g.AutoWidths()
 	g.ClampCursor()

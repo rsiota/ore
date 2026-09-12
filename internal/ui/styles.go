@@ -27,8 +27,8 @@ var (
 			Background(colorRowFocusBg)
 	// Grid cursor cell — white text on slate.
 	styleCursorCell = lipgloss.NewStyle().
-				Foreground(colorBg).
-				Background(colorPrimary)
+			Foreground(colorBg).
+			Background(colorPrimary)
 	// Pane / status tab when focused — slate pill, white text.
 	styleSelected = lipgloss.NewStyle().
 			Foreground(colorBg).
@@ -41,6 +41,10 @@ var (
 	styleStripe     = lipgloss.NewStyle().Background(colorStripe)
 	styleErr        = lipgloss.NewStyle().Foreground(lipgloss.Color("#cf222e"))
 	styleHash       = lipgloss.NewStyle().Foreground(lipgloss.Color("#0550ae"))
+
+	// Single-colour graph: solid lines, dots a touch lighter (terminal “opacity”).
+	graphLineColor = lipgloss.Color("#6e7781")
+	graphNodeColor = lipgloss.Color("#afb8c1")
 
 	styleAdd = lipgloss.NewStyle().Foreground(lipgloss.Color("#1a7f37"))
 	styleDel = lipgloss.NewStyle().Foreground(lipgloss.Color("#cf222e"))

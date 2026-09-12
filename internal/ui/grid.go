@@ -312,7 +312,10 @@ func (g Grid) renderRow(rowIdx int) string {
 		default:
 			if g.CellStyle != nil {
 				if styled, ok := g.CellStyle(rowIdx, i, text); ok {
-					parts[i] = styled
+					// Re-fit: per-glyph ANSI styling can desync lipgloss width
+					// from the column, which shifts the row and lets the
+					// detail pane wash bleed into the main grid.
+					parts[i] = fitWidth(styled, g.widthAt(i))
 					continue
 				}
 			}
