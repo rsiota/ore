@@ -56,6 +56,10 @@ var (
 			Foreground(lipgloss.Color("#cf222e")).
 			Background(lipgloss.Color("#ffebe9"))
 
+	// Detail pane hierarchy: meta muted, subject bold, hunk headers labelled.
+	styleDiffMeta = lipgloss.NewStyle().Foreground(lipgloss.Color("#656d76"))
+	styleDiffHunk = lipgloss.NewStyle().Foreground(lipgloss.Color("#57606a")).Bold(true)
+
 	styleHelpTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffffff")).Background(colorPrimary)
 	styleHelpSection = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
 	styleFilter      = lipgloss.NewStyle().Foreground(lipgloss.Color("#1f2328")).Background(lipgloss.Color("#fff8c5"))

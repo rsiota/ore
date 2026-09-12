@@ -1974,6 +1974,8 @@ func (m Model) detailLines() []string {
 	}
 	d := m.detail
 	var out []string
+
+	// Optional blame context sits above commit meta.
 	if m.main == MainBlame {
 		idx := m.blameIndices()
 		if m.blameCursor >= 0 && m.blameCursor < len(idx) {
@@ -1985,21 +1987,29 @@ func (m Model) detailLines() []string {
 			out = append(out, "")
 		}
 	}
+
+	// Meta block — quiet; hash keeps semantic blue.
 	out = append(out, styleHash.Render(d.Commit.Hash))
-	out = append(out, fmt.Sprintf("%s <%s>", d.Commit.Author, d.Commit.Email))
-	out = append(out, d.Commit.Date.Local().Format(time.RFC1123))
+	out = append(out, styleMuted.Render(fmt.Sprintf("%s <%s>", d.Commit.Author, d.Commit.Email)))
+	out = append(out, styleMuted.Render(d.Commit.Date.Local().Format(time.RFC1123)))
 	if m.detailFilterPath != "" {
 		out = append(out, styleMuted.Render("path  "+m.detailFilterPath))
 	}
+
+	// Subject is the hero line.
 	out = append(out, "")
 	out = append(out, styleTitle.Render(d.Commit.Subject))
 	if d.Body != "" {
 		out = append(out, "")
-		out = append(out, strings.Split(d.Body, "\n")...)
+		for _, line := range strings.Split(d.Body, "\n") {
+			out = append(out, styleMuted.Render(line))
+		}
 	}
-	out = append(out, "")
-	out = append(out, fmt.Sprintf("%d files  %s  %s",
-		d.Commit.Files,
+
+	// Rule sits directly under the message (no blank gap).
+	out = append(out, detailSepMarker)
+	out = append(out, fmt.Sprintf("%s  %s  %s",
+		styleMuted.Render(fmt.Sprintf("%d files", d.Commit.Files)),
 		styleAdd.Render(fmt.Sprintf("+%d", d.Commit.Additions)),
 		styleDel.Render(fmt.Sprintf("-%d", d.Commit.Deletions)),
 	))
@@ -2008,28 +2018,59 @@ func (m Model) detailLines() []string {
 			out = append(out, styleMuted.Render(line))
 		}
 	}
-	out = append(out, "")
 	if diff := strings.TrimRight(d.Diff, "\n"); diff != "" {
+		out = append(out, "")
 		out = append(out, strings.Split(diff, "\n")...)
 	}
 	return out
 }
+
+// detailSepMarker is expanded to a full-width muted rule in renderDetailLine.
+const detailSepMarker = "\x1edetail-sep"
 
 func renderDetailLine(line string, width int) string {
 	// Git diffs from CRLF files keep a trailing \r after Split(..., "\n").
 	// A carriage return mid-row sends the cursor to column 0, so wash padding
 	// then paints over the left pane.
 	line = strings.ReplaceAll(line, "\r", "")
+	if line == detailSepMarker {
+		return fitWidth(styleGridBorder.Render(strings.Repeat("─", max(0, width))), width)
+	}
 	if strings.Contains(line, "\x1b[") {
 		return fitWidth(line, width)
 	}
 	switch {
+	case isDiffFileHeader(line):
+		return cell(styleDiffMeta, line, width)
+	case strings.HasPrefix(line, "@@"):
+		return cell(styleDiffHunk, line, width)
 	case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
 		return cell(styleAddWash, line, width)
 	case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
 		return cell(styleDelWash, line, width)
 	default:
 		return fitWidth(line, width)
+	}
+}
+
+func isDiffFileHeader(line string) bool {
+	switch {
+	case strings.HasPrefix(line, "diff --git"),
+		strings.HasPrefix(line, "index "),
+		strings.HasPrefix(line, "--- "),
+		strings.HasPrefix(line, "+++ "),
+		strings.HasPrefix(line, "new file mode"),
+		strings.HasPrefix(line, "deleted file mode"),
+		strings.HasPrefix(line, "old mode"),
+		strings.HasPrefix(line, "new mode"),
+		strings.HasPrefix(line, "similarity index"),
+		strings.HasPrefix(line, "rename from"),
+		strings.HasPrefix(line, "rename to"),
+		strings.HasPrefix(line, "copy from"),
+		strings.HasPrefix(line, "copy to"):
+		return true
+	default:
+		return false
 	}
 }
 

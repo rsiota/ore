@@ -113,3 +113,65 @@ func TestDetailLinesSplitsStat(t *testing.T) {
 		t.Fatalf("expected split stat rows, got %d in %#v", statRows, lines)
 	}
 }
+
+func TestDetailLinesHierarchy(t *testing.T) {
+	m := Model{
+		detail: &git.CommitDetail{
+			Commit: git.Commit{
+				Hash:      "abc123",
+				ShortHash: "abc123",
+				Author:    "Ada",
+				Email:     "ada@ex",
+				Subject:   "Refactor auth",
+				Files:     1,
+				Additions: 3,
+				Deletions: 1,
+			},
+			Body: "More detail here.",
+			Diff: "diff --git a/x b/x\n@@ -1 +1 @@\n+hi\n",
+		},
+	}
+	lines := m.detailLines()
+	subjectAt, sepAt, diffAt := -1, -1, -1
+	for i, line := range lines {
+		plain := line
+		if strings.Contains(plain, "Refactor auth") && !strings.Contains(plain, "More") {
+			subjectAt = i
+		}
+		if plain == detailSepMarker {
+			sepAt = i
+		}
+		if strings.HasPrefix(plain, "diff --git") {
+			diffAt = i
+		}
+	}
+	if subjectAt < 0 || sepAt < 0 || diffAt < 0 {
+		t.Fatalf("missing hierarchy markers: subject=%d sep=%d diff=%d in %#v", subjectAt, sepAt, diffAt, lines)
+	}
+	if !(subjectAt < sepAt && sepAt < diffAt) {
+		t.Fatalf("want subject < rule < diff, got %d < %d < %d", subjectAt, sepAt, diffAt)
+	}
+}
+
+func TestRenderDetailLineHunkAndSep(t *testing.T) {
+	sep := renderDetailLine(detailSepMarker, 20)
+	if w := lipgloss.Width(sep); w != 20 {
+		t.Fatalf("sep width = %d", w)
+	}
+	if !strings.Contains(sep, "─") {
+		t.Fatalf("expected rule glyphs: %q", sep)
+	}
+	hunk := renderDetailLine("@@ -1,2 +1,3 @@", 24)
+	if w := lipgloss.Width(hunk); w != 24 {
+		t.Fatalf("hunk width = %d", w)
+	}
+	meta := renderDetailLine("diff --git a/f b/f", 24)
+	if w := lipgloss.Width(meta); w != 24 {
+		t.Fatalf("meta width = %d", w)
+	}
+	// +++ / --- file headers must not get add/del wash.
+	plusPlus := renderDetailLine("+++ b/f", 16)
+	if strings.Contains(plusPlus, "48;2;218;251;225") { // add wash bg
+		t.Fatalf("+++ header got add wash: %q", plusPlus)
+	}
+}
