@@ -95,7 +95,8 @@ type Model struct {
 	branch string
 	head   string
 
-	help HelpPanel
+	help    HelpPanel
+	palette palette
 
 	filterTyping bool
 	filter       string // applied / live query
@@ -394,6 +395,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "relationships · enter open · esc close"
 		return m, nil
 
+	case paletteExMsg:
+		if msg.typing {
+			m.beginEx()
+			m.exLine = msg.line
+			m.status = ":" + m.exLine + "█"
+			return m, nil
+		}
+		return m, m.runExCommand(msg.line)
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -426,7 +436,19 @@ func (m Model) selectedHash() string {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.palette.IsVisible() {
+		var cmd tea.Cmd
+		m.palette, cmd = m.palette.Update(msg)
+		return m, cmd
+	}
+
 	if m.help.Visible() {
+		if msg.String() == "ctrl+p" {
+			m.help.Hide()
+			m.palette.Open()
+			m.status = "command palette"
+			return m, nil
+		}
 		m.help.Update(msg)
 		return m, nil
 	}
@@ -446,6 +468,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
+	case "ctrl+p":
+		m.chordG = false
+		m.palette.Open()
+		m.status = "command palette"
+		return m, nil
 	case "ctrl+r":
 		m.chordG = false
 		return m, m.refresh()
@@ -1579,7 +1606,22 @@ func (m Model) View() string {
 	b.WriteString(m.renderBody())
 	b.WriteByte('\n')
 	b.WriteString(m.renderStatus())
-	return clampFrame(b.String(), m.height, m.width)
+	view := clampFrame(b.String(), m.height, m.width)
+
+	// Centered creel-style command palette popup over the workspace.
+	if m.palette.IsVisible() {
+		pw, ph := palettePopupDim()
+		palPanel := m.palette.View(pw, ph)
+		panelW := lipgloss.Width(palPanel)
+		panelH := lipgloss.Height(palPanel)
+		panelX := (m.width - panelW) / 2
+		panelY := (m.height - 1 - panelH) / 2
+		if panelY < 0 {
+			panelY = 0
+		}
+		view = placeOverlay(view, palPanel, panelX, panelY)
+	}
+	return view
 }
 
 func (m Model) renderStatus() string {

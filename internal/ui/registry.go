@@ -2,7 +2,7 @@ package ui
 
 import "strings"
 
-// Binding is one documented keybinding (help + future palette).
+// Binding is one documented keybinding (help + command palette).
 type Binding struct {
 	Display string   // what the user sees, e.g. "j/k"
 	Tokens  []string // tea.KeyMsg.String() values the dispatch handles
@@ -16,7 +16,7 @@ type Section struct {
 	Items []Binding
 }
 
-// registry is the source of truth for the ? help overlay.
+// registry is the source of truth for the ? help overlay and Ctrl+P palette.
 func registry() []Section {
 	return []Section{
 		{
@@ -24,6 +24,7 @@ func registry() []Section {
 			Items: []Binding{
 				{"?", []string{"?"}, "toggle help", "?"},
 				{":", []string{":"}, "ex command line", ":"},
+				{"ctrl+p", []string{"ctrl+p"}, "command palette", "ctrl+p"},
 				{"ctrl+r", []string{"ctrl+r"}, "refresh commit log", ""},
 				{"q / ctrl+c", []string{"q", "ctrl+c"}, "quit", "q"},
 				{"tab", []string{"tab"}, "focus main ↔ detail", "tab"},
@@ -141,15 +142,15 @@ func statusHintList(main MainView, explorerOpen bool) []string {
 	}
 	switch main {
 	case MainCommits:
-		return append([]string{"j/k"}, append(hintsForSection("Commit grid"), "gr", "tab", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Commit grid"), "gr", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainFiles:
-		return append([]string{"j/k"}, append(hintsForSection("Files grid"), "gr", "tab", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Files grid"), "gr", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainHistory:
-		return append([]string{"j/k"}, append(hintsForSection("History grid"), "tab", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("History grid"), "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainBlame:
-		return append([]string{"j/k"}, append(hintsForSection("Blame"), "gr", "tab", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Blame"), "gr", "tab", "ctrl+p", "?", "esc", "q")...)
 	default:
-		return []string{"j/k", "enter", "tab", "?", "esc", "q"}
+		return []string{"j/k", "enter", "tab", "ctrl+p", "?", "esc", "q"}
 	}
 }
 

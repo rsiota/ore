@@ -11,6 +11,7 @@ func TestRegistryHasHelpAndFilter(t *testing.T) {
 		hasFilter  bool
 		hasQuit    bool
 		hasRefresh bool
+		hasPalette bool
 	)
 	for _, sec := range registry() {
 		for _, b := range sec.Items {
@@ -24,19 +25,21 @@ func TestRegistryHasHelpAndFilter(t *testing.T) {
 					hasQuit = true
 				case "ctrl+r":
 					hasRefresh = true
+				case "ctrl+p":
+					hasPalette = true
 				}
 			}
 		}
 	}
-	if !hasHelp || !hasFilter || !hasQuit || !hasRefresh {
-		t.Fatalf("registry missing core bindings: help=%v filter=%v quit=%v refresh=%v",
-			hasHelp, hasFilter, hasQuit, hasRefresh)
+	if !hasHelp || !hasFilter || !hasQuit || !hasRefresh || !hasPalette {
+		t.Fatalf("registry missing core bindings: help=%v filter=%v quit=%v refresh=%v palette=%v",
+			hasHelp, hasFilter, hasQuit, hasRefresh, hasPalette)
 	}
 }
 
 func TestStatusHintsAreKeyOnly(t *testing.T) {
 	got := statusHints(MainCommits, false)
-	if got != "j/k/h/l/o///enter/gr/tab/?/esc/q" {
+	if got != "j/k/h/l/o///enter/gr/tab/ctrl+p/?/esc/q" {
 		// "/" is a hint key, so it appears as an empty group between slashes (creel-style).
 		t.Fatalf("commits hints = %q", got)
 	}

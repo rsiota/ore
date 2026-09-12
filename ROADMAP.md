@@ -54,7 +54,7 @@ fluid as following foreign keys in creel.
 - [x] Columnar commit grid: `h`/`l` cells, `o` sort, column-scoped `/`
 - [x] Soft graph column (like `git log --graph`, navigable)
 - [x] Extend grid widget to files / history / blame
-- [ ] Command palette (`Ctrl+P`)
+- [x] Command palette (`Ctrl+P`)
 - [ ] Themes picker / dark variant
 
 Files: `cmd/ore`, `internal/git`, `internal/ui`, `internal/config`, `internal/version`
