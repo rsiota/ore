@@ -43,6 +43,22 @@ func TestDiffWashSpansFullWidth(t *testing.T) {
 	}
 }
 
+func TestDetailLineStripsCarriageReturn(t *testing.T) {
+	// CRLF diffs leave \r after splitting on \n; that must not survive into
+	// the rendered cell or wash padding paints from column 0 over the left pane.
+	got := renderDetailLine("+added from windows\r", 24)
+	if strings.Contains(got, "\r") {
+		t.Fatalf("carriage return survived render: %q", got)
+	}
+	if w := lipgloss.Width(got); w != 24 {
+		t.Fatalf("width = %d, want 24", w)
+	}
+	plain := renderDetailLine("subject with\rCR", 20)
+	if strings.Contains(plain, "\r") {
+		t.Fatalf("carriage return survived plain line: %q", plain)
+	}
+}
+
 func TestCellDoesNotWrapLongRows(t *testing.T) {
 	long := strings.Repeat("x", 200)
 	got := cell(styleFocus, long, 40)

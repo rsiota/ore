@@ -1974,6 +1974,10 @@ func (m Model) detailLines() []string {
 }
 
 func renderDetailLine(line string, width int) string {
+	// Git diffs from CRLF files keep a trailing \r after Split(..., "\n").
+	// A carriage return mid-row sends the cursor to column 0, so wash padding
+	// then paints over the left pane.
+	line = strings.ReplaceAll(line, "\r", "")
 	if strings.Contains(line, "\x1b[") {
 		return fitWidth(line, width)
 	}
