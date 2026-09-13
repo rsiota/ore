@@ -210,6 +210,10 @@ type FileChange struct {
 	Deletions int
 }
 
+// showMetaFormat is machine-readable metadata; body is terminated by recSep so
+// a following --numstat/--stat block can be parsed from the same git show.
+const showMetaFormat = "%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%P%x1f%b%x1e"
+
 // Show returns message + numstat + patch for hash (whole commit).
 // unified is the git -U context size (clamped; use 3 for the usual default).
 func (r *Repo) Show(ctx context.Context, hash string, unified int) (CommitDetail, error) {
@@ -221,22 +225,68 @@ func (r *Repo) ShowPath(ctx context.Context, hash, path string, unified int) (Co
 	return r.show(ctx, hash, path, unified)
 }
 
-func (r *Repo) show(ctx context.Context, hash, path string, unified int) (CommitDetail, error) {
-	if unified < 0 {
-		unified = 3
-	}
+// ShowHeader returns metadata, numstat, and --stat in one git show (no patch).
+func (r *Repo) ShowHeader(ctx context.Context, hash, path string) (CommitDetail, error) {
 	var detail CommitDetail
-
-	metaOut, err := r.run(ctx, "show", "-s",
-		"--format="+strings.Join([]string{"%H", "%h", "%an", "%ae", "%aI", "%s", "%P", "%b"}, fieldSep),
-		hash)
+	args := []string{"show", "--format=" + showMetaFormat, "--numstat", "--stat", "--find-renames", hash}
+	if path != "" {
+		args = append(args, "--", path)
+	}
+	out, err := r.run(ctx, args...)
 	if err != nil {
 		return detail, err
 	}
-	line := strings.TrimSpace(string(metaOut))
-	parts := strings.SplitN(line, fieldSep, 8)
+	detail, rest, err := parseShowHeader(out)
+	if err != nil {
+		return detail, err
+	}
+	files, add, del, stat := parseNumstatAndStat(rest)
+	detail.Files = files
+	detail.Commit.Files = len(files)
+	detail.Commit.Additions = add
+	detail.Commit.Deletions = del
+	detail.Stat = stat
+	return detail, nil
+}
+
+// ShowPatch returns the unified patch only (one git show --patch).
+func (r *Repo) ShowPatch(ctx context.Context, hash, path string, unified int) (string, error) {
+	if unified < 0 {
+		unified = 3
+	}
+	args := []string{"show", "--format=", "--patch", "--find-renames", fmt.Sprintf("-U%d", unified), hash}
+	if path != "" {
+		args = append(args, "--", path)
+	}
+	out, err := r.run(ctx, args...)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func (r *Repo) show(ctx context.Context, hash, path string, unified int) (CommitDetail, error) {
+	detail, err := r.ShowHeader(ctx, hash, path)
+	if err != nil {
+		return detail, err
+	}
+	diff, err := r.ShowPatch(ctx, hash, path, unified)
+	if err != nil {
+		return detail, err
+	}
+	detail.Diff = diff
+	return detail, nil
+}
+
+func parseShowHeader(out []byte) (CommitDetail, []byte, error) {
+	var detail CommitDetail
+	end := bytes.Index(out, []byte(recSep))
+	if end < 0 {
+		return detail, nil, fmt.Errorf("unexpected show format: missing record separator")
+	}
+	parts := strings.SplitN(string(out[:end]), fieldSep, 8)
 	if len(parts) < 7 {
-		return detail, fmt.Errorf("unexpected show format: %q", line)
+		return detail, nil, fmt.Errorf("unexpected show format: %q", string(out[:end]))
 	}
 	ts, err := time.Parse(time.RFC3339, parts[4])
 	if err != nil {
@@ -260,40 +310,50 @@ func (r *Repo) show(ctx context.Context, hash, path string, unified int) (Commit
 		Parents:   parents,
 	}
 	detail.Body = body
+	return detail, out[end+len(recSep):], nil
+}
 
-	uFlag := fmt.Sprintf("-U%d", unified)
-	numstatArgs := []string{"show", "--format=", "--numstat", "--find-renames", hash}
-	diffArgs := []string{"show", "--format=", "--patch", "--find-renames", uFlag, hash}
-	statArgs := []string{"show", "--format=", "--stat", "--find-renames", hash}
-	if path != "" {
-		numstatArgs = append(numstatArgs, "--", path)
-		diffArgs = append(diffArgs, "--", path)
-		statArgs = append(statArgs, "--", path)
+func parseNumstatAndStat(rest []byte) (files []FileChange, additions, deletions int, stat string) {
+	text := strings.TrimLeft(string(rest), "\r\n")
+	if text == "" {
+		return nil, 0, 0, ""
 	}
-
-	statOut, err := r.run(ctx, numstatArgs...)
-	if err != nil {
-		return detail, err
+	var numstat strings.Builder
+	var statBuf strings.Builder
+	inStat := false
+	for _, line := range strings.Split(text, "\n") {
+		if !inStat {
+			if line == "" {
+				continue
+			}
+			if isNumstatLine(line) {
+				numstat.WriteString(line)
+				numstat.WriteByte('\n')
+				continue
+			}
+			inStat = true
+		}
+		statBuf.WriteString(line)
+		statBuf.WriteByte('\n')
 	}
-	files, add, del := parseNumstat(statOut)
-	detail.Files = files
-	detail.Commit.Files = len(files)
-	detail.Commit.Additions = add
-	detail.Commit.Deletions = del
+	files, additions, deletions = parseNumstat([]byte(numstat.String()))
+	return files, additions, deletions, statBuf.String()
+}
 
-	diffOut, err := r.run(ctx, diffArgs...)
-	if err != nil {
-		return detail, err
+func isNumstatLine(line string) bool {
+	fields := strings.Split(line, "\t")
+	if len(fields) < 3 {
+		return false
 	}
-	detail.Diff = string(diffOut)
+	return isNumstatCount(fields[0]) && isNumstatCount(fields[1])
+}
 
-	summaryOut, err := r.run(ctx, statArgs...)
-	if err != nil {
-		return detail, err
+func isNumstatCount(s string) bool {
+	if s == "-" {
+		return true
 	}
-	detail.Stat = string(summaryOut)
-
-	return detail, nil
+	_, err := strconv.Atoi(s)
+	return err == nil
 }
 
 func parseNumstat(out []byte) (files []FileChange, additions, deletions int) {

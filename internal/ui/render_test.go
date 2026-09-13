@@ -143,7 +143,8 @@ func TestDetailLinesHierarchy(t *testing.T) {
 		if plain == detailSepMarker {
 			sepAt = i
 		}
-		if strings.HasPrefix(plain, "diff --git") || strings.HasPrefix(plain, zenFilePrefix) ||
+		trimmed := strings.TrimPrefix(plain, " ")
+		if strings.HasPrefix(trimmed, "diff --git") || strings.HasPrefix(plain, zenFilePrefix) ||
 			strings.HasPrefix(plain, zenAddPrefix) {
 			if diffAt < 0 {
 				diffAt = i
@@ -206,9 +207,15 @@ func TestRenderDetailLineHunkAndSep(t *testing.T) {
 	if !strings.Contains(sep, "─") {
 		t.Fatalf("expected rule glyphs: %q", sep)
 	}
+	if strings.HasPrefix(sep, " ") {
+		t.Fatalf("rule should be full-bleed, got leading pad: %q", sep)
+	}
 	hunk := renderDetailLine("@@ -1,2 +1,3 @@", 24)
 	if w := lipgloss.Width(hunk); w != 24 {
 		t.Fatalf("hunk width = %d", w)
+	}
+	if !strings.HasPrefix(hunk, " ") {
+		t.Fatalf("unified content should be left-inset: %q", hunk)
 	}
 	meta := renderDetailLine("diff --git a/f b/f", 24)
 	if w := lipgloss.Width(meta); w != 24 {

@@ -85,15 +85,22 @@ type Model struct {
 	detail           *git.CommitDetail
 	detailFilterPath string // path requested by the in-flight / latest reloadDetail
 	detailPath       string // path the current detail payload was loaded with ("" = whole commit)
-	detailExpectHash string // if set, detailLoadedMsg may target this hash (e.g. :goto)
+	detailExpectHash string // if set, detail load may target this hash (e.g. :goto)
 	detailOffset     int
 	diffMode         DiffMode // zen (default) or unified patch
 	zenContext       int      // git -U / in-hunk context lines
 	detailWrap       bool     // soft-wrap long detail lines
-	loading          bool
-	loadingDetail    bool
-	err              string
-	status           string
+	detailTruncated  bool     // patch soft-capped for responsiveness
+	detailPatchPending bool   // header shown; patch still loading
+	detailDebounceSeq  int
+	detailLoadSeq      int
+	detailCancel       context.CancelFunc
+	detailCtx          context.Context
+	detailCache        *detailRenderCache // pointer so View (value recv) can memoize
+	loading            bool
+	loadingDetail      bool
+	err                string
+	status             string
 
 	branch string
 	head   string
@@ -131,6 +138,7 @@ func New(repo *git.Repo) Model {
 		blameSortCol:   -1,
 		diffMode:       DiffZen,
 		zenContext:     defaultZenContext,
+		detailCache:    &detailRenderCache{},
 	}
 }
 
@@ -139,13 +147,6 @@ type commitsLoadedMsg struct {
 	branch  string
 	head    string
 	err     error
-}
-
-type detailLoadedMsg struct {
-	hash   string
-	path   string
-	detail git.CommitDetail
-	err    error
 }
 
 type historyLoadedMsg struct {
@@ -178,23 +179,6 @@ func loadCommitsCmd(repo *git.Repo) tea.Cmd {
 			head:    repo.HeadShort(ctx),
 			err:     err,
 		}
-	}
-}
-
-func loadDetailCmd(repo *git.Repo, hash, path string, unified int) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		var (
-			detail git.CommitDetail
-			err    error
-		)
-		if path != "" {
-			detail, err = repo.ShowPath(ctx, hash, path, unified)
-		} else {
-			detail, err = repo.Show(ctx, hash, unified)
-		}
-		return detailLoadedMsg{hash: hash, path: path, detail: detail, err: err}
 	}
 }
 
@@ -281,39 +265,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case detailLoadedMsg:
-		m.loadingDetail = false
-		expect := m.selectedHash()
-		if m.detailExpectHash != "" {
-			expect = m.detailExpectHash
-		}
-		if !hashMatch(msg.hash, expect) || msg.path != m.detailFilterPath {
-			return m, nil // stale
-		}
-		m.detailExpectHash = ""
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			m.detail = nil
-			m.detailPath = ""
-			return m, nil
-		}
-		m.err = ""
-		d := msg.detail
-		m.detail = &d
-		m.detailPath = msg.path
-		m.detailOffset = 0
-		// Only refresh the files grid from whole-commit Show payloads.
-		// Path-scoped ShowPath detail has a single FileChange for the detail
-		// pane and must not replace the commit's full file list.
-		if msg.path == "" && m.main == MainFiles && hashMatch(d.Commit.Hash, m.filesCommitHash) {
-			m.syncFilesFromDetail()
-		}
-		if m.openFilesPending && m.main == MainCommits {
-			m.openFilesPending = false
-			m.enterFilesView()
-			return m, m.reloadDetail()
-		}
-		return m, nil
+	case detailDebounceMsg:
+		return m.handleDetailDebounce(msg)
+
+	case detailHeaderMsg:
+		return m.handleDetailHeader(msg)
+
+	case detailPatchMsg:
+		return m.handleDetailPatch(msg)
 
 	case historyLoadedMsg:
 		m.loadingHistory = false
@@ -482,12 +441,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.chordG = false
 		m.diffMode = m.diffMode.Next()
 		m.detailOffset = 0
+		m.invalidateDetailCache()
 		m.status = "diff " + m.diffMode.Label()
 		return m, nil
 	case "w":
 		m.chordG = false
 		m.detailWrap = !m.detailWrap
 		m.detailOffset = 0
+		m.invalidateDetailCache()
 		if m.detailWrap {
 			m.status = "diff wrap on"
 		} else {
@@ -652,9 +613,10 @@ func (m Model) activateRelation() (tea.Model, tea.Cmd) {
 		}
 		// Commit not in current log window — still show detail.
 		m.detailFilterPath = ""
+		m.detailExpectHash = row.hash
 		m.loadingDetail = true
 		m.main = MainCommits
-		return m, loadDetailCmd(m.repo, row.hash, "", m.zenContext)
+		return m, m.reloadDetailNow()
 	case relFile:
 		path := row.path
 		m.explorer.Close()
@@ -1019,7 +981,7 @@ func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailFilterPath = ""
 		m.loadingDetail = true
 		m.detailOffset = 0
-		return m, loadDetailCmd(m.repo, hash, "", m.zenContext)
+		return m, m.reloadDetailNow()
 	}
 	return m, nil
 }
@@ -1314,11 +1276,11 @@ func (m Model) followBlameLine() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	lines := m.detailVisualLines()
+	total := m.detailVisualCount()
 	page := max(1, m.detailViewHeight()-1)
 	switch msg.String() {
 	case "j", "down":
-		if m.detailOffset < len(lines)-1 {
+		if m.detailOffset < total-1 {
 			m.detailOffset++
 		}
 	case "k", "up":
@@ -1328,38 +1290,15 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "g", "home":
 		m.detailOffset = 0
 	case "G", "end":
-		m.detailOffset = max(0, len(lines)-page)
+		m.detailOffset = max(0, total-page)
 	case "ctrl+d":
-		m.detailOffset = min(max(0, len(lines)-page), m.detailOffset+page)
+		m.detailOffset = min(max(0, total-page), m.detailOffset+page)
 	case "ctrl+u":
 		m.detailOffset = max(0, m.detailOffset-page)
 	case "esc", "backspace", "h":
 		return m.goBack()
 	}
 	return m, nil
-}
-
-func (m *Model) reloadDetail() tea.Cmd {
-	hash := m.selectedHash()
-	if hash == "" {
-		return nil
-	}
-	path := ""
-	switch m.main {
-	case MainFiles:
-		idx := m.fileIndices()
-		if m.fileCursor >= 0 && m.fileCursor < len(idx) {
-			path = m.files[idx[m.fileCursor]].Path
-		}
-	case MainHistory:
-		path = m.historyPath
-	case MainBlame:
-		path = m.blamePath
-	}
-	m.detailFilterPath = path
-	m.loadingDetail = true
-	m.detailOffset = 0
-	return loadDetailCmd(m.repo, hash, path, m.zenContext)
 }
 
 // refresh reloads the commit log (and re-fetches the current view), matching
@@ -1556,11 +1495,21 @@ func (m Model) detailInnerWidth() int {
 
 // detailVisualLines expands logical detail rows for the current wrap mode.
 func (m Model) detailVisualLines() []string {
-	body := m.detailLines()
-	if m.loadingDetail && m.detail == nil {
-		body = []string{styleMuted.Render(" loading…")}
+	width := m.detailInnerWidth()
+	body := m.ensureDetailLogical(width)
+	if m.detailWrap {
+		return m.ensureDetailVisual(width, body)
 	}
-	return expandDetailRows(body, m.detailInnerWidth(), m.detailWrap)
+	return expandDetailRows(body, width, false)
+}
+
+func (m Model) detailVisualCount() int {
+	width := m.detailInnerWidth()
+	body := m.ensureDetailLogical(width)
+	if m.detailWrap {
+		return len(m.ensureDetailVisual(width, body))
+	}
+	return len(body)
 }
 
 func (m Model) borderForFocus(f Focus) lipgloss.Color {
@@ -1713,10 +1662,7 @@ func (m Model) renderStatus() string {
 		midParts = append(midParts, styleMuted.Render(fmt.Sprintf("%s @ %s", m.branch, m.head)))
 	}
 
-	busy := m.loading || m.loadingHistory || m.loadingBlame || m.loadingRel
-	if m.loadingDetail && m.detail == nil {
-		busy = true
-	}
+	busy := m.loading || m.loadingHistory || m.loadingBlame || m.loadingRel || m.loadingDetail
 
 	var hints string
 	switch {
@@ -2022,20 +1968,7 @@ func (m Model) renderDetailPane(width, height int) string {
 	if h < 1 {
 		h = 1
 	}
-	body := m.detailLines()
-	if m.loadingDetail && m.detail == nil {
-		body = []string{styleMuted.Render(" loading…")}
-	}
-	visual := expandDetailRows(body, width, m.detailWrap)
-	off := m.detailOffset
-	if off > max(0, len(visual)-1) {
-		off = max(0, len(visual)-1)
-	}
-	end := min(len(visual), off+h)
-	var lines []string
-	if off < len(visual) {
-		lines = append(lines, visual[off:end]...)
-	}
+	lines, _ := m.detailVisualWindow(width, h, m.detailOffset)
 	return padPane(lines, width, height)
 }
 
@@ -2073,54 +2006,57 @@ func (m Model) detailLinesZen(d *git.CommitDetail) []string {
 
 func (m Model) detailLinesUnified(d *git.CommitDetail) []string {
 	var out []string
+	pad := func(s string) string { return strings.Repeat(" ", cellPad) + s }
 
 	// Optional blame context sits above commit meta.
 	if m.main == MainBlame {
 		idx := m.blameIndices()
 		if m.blameCursor >= 0 && m.blameCursor < len(idx) {
 			bl := m.blame[idx[m.blameCursor]]
-			out = append(out, styleMuted.Render(fmt.Sprintf("line %d · %s", bl.Line, relativeAge(bl.When))))
+			out = append(out, styleMuted.Render(pad(fmt.Sprintf("line %d · %s", bl.Line, relativeAge(bl.When)))))
 			if bl.Summary != "" {
-				out = append(out, styleTitle.Render(bl.Summary))
+				out = append(out, pad(styleTitle.Render(bl.Summary)))
 			}
-			out = append(out, "")
+			out = append(out, pad(""))
 		}
 	}
 
 	// Meta block — quiet; hash keeps semantic blue.
-	out = append(out, styleHash.Render(d.Commit.Hash))
-	out = append(out, styleMuted.Render(fmt.Sprintf("%s <%s>", d.Commit.Author, d.Commit.Email)))
-	out = append(out, styleMuted.Render(d.Commit.Date.Local().Format(time.RFC1123)))
+	out = append(out, pad(styleHash.Render(d.Commit.Hash)))
+	out = append(out, styleMuted.Render(pad(fmt.Sprintf("%s <%s>", d.Commit.Author, d.Commit.Email))))
+	out = append(out, styleMuted.Render(pad(d.Commit.Date.Local().Format(time.RFC1123))))
 	if m.detailFilterPath != "" {
-		out = append(out, styleMuted.Render("path  "+m.detailFilterPath))
+		out = append(out, styleMuted.Render(pad("path  "+m.detailFilterPath)))
 	}
 
 	// Subject is the hero line.
-	out = append(out, "")
-	out = append(out, styleTitle.Render(d.Commit.Subject))
+	out = append(out, pad(""))
+	out = append(out, pad(styleTitle.Render(d.Commit.Subject)))
 	if d.Body != "" {
-		out = append(out, "")
+		out = append(out, pad(""))
 		for _, line := range strings.Split(d.Body, "\n") {
-			out = append(out, styleMuted.Render(line))
+			out = append(out, styleMuted.Render(pad(line)))
 		}
 	}
 
-	// Rule sits directly under the message (no blank gap).
+	// Full-bleed rule under the message; content above/below stays inset.
 	out = append(out, detailSepMarker)
-	out = append(out, fmt.Sprintf("%s  %s  %s  %s",
+	out = append(out, pad(fmt.Sprintf("%s  %s  %s  %s",
 		styleMuted.Render(fmt.Sprintf("%d files", d.Commit.Files)),
 		styleAdd.Render(fmt.Sprintf("+%d", d.Commit.Additions)),
 		styleDel.Render(fmt.Sprintf("-%d", d.Commit.Deletions)),
 		styleMuted.Render(fmt.Sprintf("· %s ·U%d · D [/] · w", m.diffMode.Label(), m.zenContext)),
-	))
+	)))
 	if stat := strings.TrimRight(d.Stat, "\n"); stat != "" {
 		for _, line := range strings.Split(stat, "\n") {
-			out = append(out, styleMuted.Render(line))
+			out = append(out, styleMuted.Render(pad(line)))
 		}
 	}
 	if diff := strings.TrimRight(d.Diff, "\n"); diff != "" {
-		out = append(out, "")
-		out = append(out, strings.Split(diff, "\n")...)
+		out = append(out, pad(""))
+		for _, line := range strings.Split(diff, "\n") {
+			out = append(out, pad(line))
+		}
 	}
 	return out
 }
@@ -2171,34 +2107,50 @@ func renderDetailRows(line string, width int, wrap bool) []string {
 		}
 	}
 	if strings.Contains(line, "\x1b[") {
-		return []string{fitWidth(line, width)}
+		return []string{fitDetailInset(line, width)}
+	}
+	// Unified / plain rows may carry a leading cellPad from detailLinesUnified.
+	content := line
+	if p := strings.Repeat(" ", cellPad); strings.HasPrefix(line, p) {
+		content = line[len(p):]
 	}
 	switch {
-	case isDiffFileHeader(line):
-		return renderWrappedCell(styleDiffMeta, line, width, wrap)
-	case strings.HasPrefix(line, "@@"):
-		return renderWrappedCell(styleDiffHunk, line, width, wrap)
-	case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
-		return renderWrappedCell(styleAddWash, line, width, wrap)
-	case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
-		return renderWrappedCell(styleDelWash, line, width, wrap)
+	case isDiffFileHeader(content):
+		return renderWrappedCell(styleDiffMeta, content, width, wrap)
+	case strings.HasPrefix(content, "@@"):
+		return renderWrappedCell(styleDiffHunk, content, width, wrap)
+	case strings.HasPrefix(content, "+") && !strings.HasPrefix(content, "+++"):
+		return renderWrappedCell(styleAddWash, content, width, wrap)
+	case strings.HasPrefix(content, "-") && !strings.HasPrefix(content, "---"):
+		return renderWrappedCell(styleDelWash, content, width, wrap)
 	default:
-		return renderWrappedCell(lipgloss.NewStyle(), line, width, wrap)
+		return renderWrappedCell(lipgloss.NewStyle(), content, width, wrap)
 	}
 }
 
+// fitDetailInset keeps one cell of empty space on the right; left pad is
+// expected to already be present in s (from detailLinesUnified / zen subject).
+func fitDetailInset(s string, width int) string {
+	inner := width - cellPad
+	if inner < 1 {
+		return fitWidth(s, width)
+	}
+	return fitWidth(fitWidth(s, inner), width)
+}
+
 func renderWrappedCell(st lipgloss.Style, text string, width int, wrap bool) []string {
-	bodyW := width - cellPad
+	pad := strings.Repeat(" ", cellPad)
+	bodyW := width - 2*cellPad
 	if bodyW < 1 {
-		bodyW = width
+		bodyW = max(1, width-cellPad)
 	}
 	if !wrap {
-		return []string{fitWidth(cell(st, text, bodyW), width)}
+		return []string{fitWidth(pad+cell(st, text, bodyW), width)}
 	}
 	chunks := wrapDisplay(text, bodyW)
 	rows := make([]string, 0, len(chunks))
 	for _, c := range chunks {
-		rows = append(rows, fitWidth(cell(st, c, bodyW), width))
+		rows = append(rows, fitWidth(pad+cell(st, c, bodyW), width))
 	}
 	return rows
 }

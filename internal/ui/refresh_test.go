@@ -133,13 +133,16 @@ func TestPathScopedDetailDoesNotWipeFilesGrid(t *testing.T) {
 		detailFilterPath: "a.go",
 		detailPath:       "a.go",
 		loadingDetail:    true,
+		detailLoadSeq:    1,
+		detailCache:      &detailRenderCache{},
 	}
-	next, _ := m.Update(detailLoadedMsg{
+	next, cmd := m.Update(detailHeaderMsg{
+		seq:  1,
 		hash: "abcabcabc",
 		path: "a.go",
 		detail: git.CommitDetail{
 			Commit: git.Commit{Hash: "abcabcabc", ShortHash: "abcabca"},
-			Files:  []git.FileChange{{Path: "a.go"}}, // ShowPath payload
+			Files:  []git.FileChange{{Path: "a.go"}}, // path-scoped payload
 		},
 	})
 	mm := next.(Model)
@@ -151,6 +154,9 @@ func TestPathScopedDetailDoesNotWipeFilesGrid(t *testing.T) {
 	}
 	if mm.detailPath != "a.go" {
 		t.Fatalf("detailPath = %q", mm.detailPath)
+	}
+	if cmd == nil {
+		t.Fatal("expected patch follow-up cmd")
 	}
 }
 
@@ -178,10 +184,13 @@ func TestEnterFilesIgnoresPathScopedDetail(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected whole-commit load cmd")
 	}
-	// Simulate whole-commit Show arriving.
+	// Simulate whole-commit header arriving (opens files, then path reload).
 	mm.loadingDetail = true
 	mm.detailFilterPath = ""
-	next, cmd = mm.Update(detailLoadedMsg{
+	mm.detailLoadSeq = 1
+	mm.detailCache = &detailRenderCache{}
+	next, cmd = mm.Update(detailHeaderMsg{
+		seq:  1,
 		hash: "abcabcabc",
 		path: "",
 		detail: git.CommitDetail{
@@ -202,5 +211,8 @@ func TestEnterFilesIgnoresPathScopedDetail(t *testing.T) {
 	}
 	if mm.openFilesPending {
 		t.Fatal("openFilesPending should clear")
+	}
+	if cmd == nil {
+		t.Fatal("expected path-scoped reload after opening files")
 	}
 }

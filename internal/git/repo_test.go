@@ -92,6 +92,51 @@ func TestOpenAndCommitLog(t *testing.T) {
 	}
 }
 
+func TestShowHeaderMultilineBody(t *testing.T) {
+	dir := t.TempDir()
+	run := gitTestRunner(t, dir)
+	run("init", "-b", "main")
+	run("config", "user.email", "ore@test")
+	run("config", "user.name", "ore-test")
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(path, []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "f.txt")
+	run("commit", "-m", "subject line", "-m", "body line one\nbody line two")
+
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	commits, err := repo.CommitLog(ctx, LogOptions{MaxCount: 1})
+	if err != nil || len(commits) != 1 {
+		t.Fatalf("log: %v %#v", err, commits)
+	}
+	header, err := repo.ShowHeader(ctx, commits[0].Hash, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if header.Commit.Subject != "subject line" {
+		t.Fatalf("subject = %q", header.Commit.Subject)
+	}
+	if !strings.Contains(header.Body, "body line one") || !strings.Contains(header.Body, "body line two") {
+		t.Fatalf("body = %q", header.Body)
+	}
+	if len(header.Files) != 1 || header.Stat == "" {
+		t.Fatalf("files/stat: %+v %q", header.Files, header.Stat)
+	}
+	if header.Diff != "" {
+		t.Fatal("header must not include patch")
+	}
+	patch, err := repo.ShowPatch(ctx, commits[0].Hash, "", 3)
+	if err != nil || patch == "" {
+		t.Fatalf("patch: %v %q", err, patch)
+	}
+}
+
 func TestOpenNotRepo(t *testing.T) {
 	dir := t.TempDir()
 	_, err := Open(dir)
