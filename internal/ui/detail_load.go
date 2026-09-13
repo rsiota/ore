@@ -119,7 +119,8 @@ func (m *Model) beginDetailLoad() tea.Cmd {
 	repo := m.repo
 	m.loadingDetail = true
 	m.detailPatchPending = true
-	m.invalidateDetailCache()
+	m.detailPending = nil
+	// Keep showing the previous detail until header+patch are both ready.
 
 	return func() tea.Msg {
 		detail, err := repo.ShowHeader(ctx, hash, path)
@@ -198,6 +199,7 @@ func (m *Model) handleDetailHeader(msg detailHeaderMsg) (tea.Model, tea.Cmd) {
 		}
 		m.err = msg.err.Error()
 		m.detail = nil
+		m.detailPending = nil
 		m.detailPath = ""
 		m.loadingDetail = false
 		m.detailPatchPending = false
@@ -206,18 +208,16 @@ func (m *Model) handleDetailHeader(msg detailHeaderMsg) (tea.Model, tea.Cmd) {
 	}
 	m.err = ""
 	d := msg.detail
-	m.detail = &d
-	m.detailPath = msg.path
-	m.detailTruncated = false
-	m.detailOffset = 0
+	// Stage header only — keep painting the previous detail to avoid flicker.
+	pending := d
+	m.detailPending = &pending
 	m.detailPatchPending = true
-	m.invalidateDetailCache()
 	if msg.path == "" && m.main == MainFiles && hashMatch(d.Commit.Hash, m.filesCommitHash) {
-		m.syncFilesFromDetail()
+		m.syncFilesFrom(d.Files, d.Commit.Hash)
 	}
 	if m.openFilesPending && m.main == MainCommits {
 		m.openFilesPending = false
-		m.enterFilesView()
+		m.enterFilesViewFrom(d)
 		// Files view needs path-scoped detail; restart load for selected file.
 		return *m, m.reloadDetailNow()
 	}
@@ -242,15 +242,19 @@ func (m *Model) handleDetailPatch(msg detailPatchMsg) (tea.Model, tea.Cmd) {
 		m.err = msg.err.Error()
 		m.loadingDetail = false
 		m.detailPatchPending = false
+		m.detailPending = nil
 		return *m, nil
 	}
-	if m.detail == nil || !hashMatch(m.detail.Commit.Hash, msg.hash) {
-		// Header missing/stale — ignore patch.
+	if m.detailPending == nil || !hashMatch(m.detailPending.Commit.Hash, msg.hash) {
 		return *m, nil
 	}
-	m.err = ""
-	m.detail.Diff = msg.diff
+	d := *m.detailPending
+	d.Diff = msg.diff
+	m.detail = &d
+	m.detailPending = nil
+	m.detailPath = msg.path
 	m.detailTruncated = msg.truncated
+	m.detailOffset = 0
 	m.detailPatchPending = false
 	m.loadingDetail = false
 	m.detailExpectHash = ""

@@ -28,9 +28,9 @@ func (m Model) detailRenderKey(width int) string {
 		hash = m.detail.Commit.Hash
 		diffLen = len(m.detail.Diff)
 	}
-	return fmt.Sprintf("%s|%s|%d|%d|%t|%d|%t|%t|%d",
+	return fmt.Sprintf("%s|%s|%d|%d|%t|%d|%t|%d",
 		hash, m.detailPath, m.diffMode, m.zenContext, m.detailWrap, width,
-		m.detailPatchPending, m.detailTruncated, diffLen)
+		m.detailTruncated, diffLen)
 }
 
 func (m Model) ensureDetailLogical(width int) []string {
@@ -42,11 +42,6 @@ func (m Model) ensureDetailLogical(width int) []string {
 		return m.detailCache.logical
 	}
 	body := m.detailLines()
-	if m.loadingDetail && m.detail == nil {
-		body = []string{styleMuted.Render(" loading…")}
-	} else if m.detailPatchPending && m.detail != nil {
-		body = append(body, styleMuted.Render(strings.Repeat(" ", cellPad)+"loading patch…"))
-	}
 	if m.detailTruncated && m.detail != nil && m.detail.Diff != "" {
 		body = append(body, styleMuted.Render(strings.Repeat(" ", cellPad)+
 			"… patch truncated for speed (path-filter or smaller commit for full)"))

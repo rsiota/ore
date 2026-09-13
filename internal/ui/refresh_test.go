@@ -149,11 +149,11 @@ func TestPathScopedDetailDoesNotWipeFilesGrid(t *testing.T) {
 	if len(mm.files) != 3 {
 		t.Fatalf("files wiped to %d entries: %+v", len(mm.files), mm.files)
 	}
-	if mm.detail == nil || len(mm.detail.Files) != 1 {
-		t.Fatal("detail should still be path-scoped")
+	if mm.detail != nil {
+		t.Fatal("path-scoped header must not paint until patch arrives")
 	}
-	if mm.detailPath != "a.go" {
-		t.Fatalf("detailPath = %q", mm.detailPath)
+	if mm.detailPending == nil || len(mm.detailPending.Files) != 1 {
+		t.Fatal("header should be staged pending")
 	}
 	if cmd == nil {
 		t.Fatal("expected patch follow-up cmd")

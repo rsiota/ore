@@ -90,8 +90,9 @@ type Model struct {
 	diffMode         DiffMode // zen (default) or unified patch
 	zenContext       int      // git -U / in-hunk context lines
 	detailWrap       bool     // soft-wrap long detail lines
-	detailTruncated  bool     // patch soft-capped for responsiveness
-	detailPatchPending bool   // header shown; patch still loading
+	detailTruncated    bool // patch soft-capped for responsiveness
+	detailPatchPending bool // header fetched; waiting to paint until patch arrives
+	detailPending      *git.CommitDetail // staged header; not shown until patch lands
 	detailDebounceSeq  int
 	detailLoadSeq      int
 	detailCancel       context.CancelFunc
@@ -990,18 +991,22 @@ func (m *Model) enterFilesView() {
 	if m.detail == nil {
 		return
 	}
+	m.enterFilesViewFrom(*m.detail)
+}
+
+func (m *Model) enterFilesViewFrom(d git.CommitDetail) {
 	m.filter = ""
 	m.filterTyping = false
 	m.main = MainFiles
-	m.files = m.detail.Files
-	m.filesCommitHash = m.detail.Commit.Hash
+	m.files = d.Files
+	m.filesCommitHash = d.Commit.Hash
 	m.fileCursor = 0
 	m.fileOffset = 0
 	m.fileCol = 0
 	m.fileSortCol = -1
 	m.fileSortDir = SortNone
 	m.focus = FocusMain
-	m.status = fmt.Sprintf("%d files in %s · enter history · b blame · esc back", len(m.files), m.detail.Commit.ShortHash)
+	m.status = fmt.Sprintf("%d files in %s · enter history · b blame · esc back", len(m.files), d.Commit.ShortHash)
 }
 
 func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1409,13 +1414,17 @@ func (m *Model) syncFilesFromDetail() {
 	if m.detail == nil {
 		return
 	}
+	m.syncFilesFrom(m.detail.Files, m.detail.Commit.Hash)
+}
+
+func (m *Model) syncFilesFrom(files []git.FileChange, hash string) {
 	prefer := ""
 	idx := m.fileIndices()
 	if m.fileCursor >= 0 && m.fileCursor < len(idx) {
 		prefer = m.files[idx[m.fileCursor]].Path
 	}
-	m.files = m.detail.Files
-	m.filesCommitHash = m.detail.Commit.Hash
+	m.files = files
+	m.filesCommitHash = hash
 	m.fileCursor = 0
 	if prefer != "" {
 		for i, src := range m.fileIndices() {
@@ -1974,6 +1983,10 @@ func (m Model) renderDetailPane(width, height int) string {
 
 func (m Model) detailLines() []string {
 	if m.detail == nil {
+		// Stay blank while the first detail load is in flight — avoids flicker.
+		if m.loadingDetail {
+			return nil
+		}
 		return []string{styleMuted.Render("(no commit selected)")}
 	}
 	d := m.detail
@@ -1998,7 +2011,7 @@ func (m Model) detailLinesZen(d *git.CommitDetail) []string {
 	out = append(out, pad+styleTitle.Render(d.Commit.Subject))
 	if diff := strings.TrimRight(d.Diff, "\n"); diff != "" {
 		out = append(out, zenDiffLines(diff, m.zenContext)...)
-	} else {
+	} else if !m.detailPatchPending {
 		out = append(out, styleMuted.Render(pad+"(no patch)"))
 	}
 	return out

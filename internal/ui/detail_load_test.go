@@ -102,9 +102,15 @@ func TestClampDetailBody(t *testing.T) {
 }
 
 func TestDetailPatchAppliesAfterHeader(t *testing.T) {
+	old := &git.CommitDetail{
+		Commit: git.Commit{Hash: "oldoldold", ShortHash: "oldold", Subject: "previous"},
+		Diff:   "+old\n",
+	}
 	m := Model{
 		commits:          []git.Commit{{Hash: "abcabcabc", ShortHash: "abcabca"}},
 		cursor:           0,
+		detail:           old,
+		detailPath:       "",
 		detailFilterPath: "",
 		detailLoadSeq:    3,
 		detailCache:      &detailRenderCache{},
@@ -117,8 +123,11 @@ func TestDetailPatchAppliesAfterHeader(t *testing.T) {
 		},
 	})
 	mm := next.(Model)
-	if mm.detail == nil || mm.detail.Commit.Subject != "hi" {
-		t.Fatal("header not applied")
+	if mm.detail == nil || mm.detail.Commit.Subject != "previous" {
+		t.Fatal("header must not replace displayed detail yet")
+	}
+	if mm.detailPending == nil || mm.detailPending.Commit.Subject != "hi" {
+		t.Fatal("header should be staged pending")
 	}
 	if !mm.detailPatchPending || cmd == nil {
 		t.Fatal("expected patch pending + follow-up cmd")
@@ -129,10 +138,10 @@ func TestDetailPatchAppliesAfterHeader(t *testing.T) {
 		diff: "diff --git a/x b/x\n+hi\n",
 	})
 	mm = next.(Model)
-	if mm.detailPatchPending || mm.loadingDetail {
+	if mm.detailPatchPending || mm.loadingDetail || mm.detailPending != nil {
 		t.Fatal("patch should finish loading")
 	}
-	if mm.detail.Diff == "" {
-		t.Fatal("diff not applied")
+	if mm.detail == nil || mm.detail.Commit.Subject != "hi" || mm.detail.Diff == "" {
+		t.Fatal("detail should swap atomically with patch")
 	}
 }
