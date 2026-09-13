@@ -24,7 +24,9 @@ func TestZenDiffLinesWithContext(t *testing.T) {
 	}, "\n")
 	got := zenDiffLines(diff, 3)
 	want := []string{
+		zenFileRuleMarker,
 		zenFilePrefix + "foo.go",
+		zenFileRuleMarker,
 		zenHunkPrefix + "@@ -10,4 +10,5 @@ func main() {",
 		zenCtxPrefix + "10" + zenFieldSep + "context",
 		zenDelPrefix + "11" + zenFieldSep + "old",
@@ -72,9 +74,11 @@ func TestZenDiffTrimsContext(t *testing.T) {
 			kinds = append(kinds, "add")
 		case strings.HasPrefix(line, zenFilePrefix):
 			kinds = append(kinds, "file")
+		case line == zenFileRuleMarker:
+			kinds = append(kinds, "rule")
 		}
 	}
-	want := []string{"file", "hunk", "ctx:c", "del", "add", "ctx:d"}
+	want := []string{"rule", "file", "rule", "hunk", "ctx:c", "del", "add", "ctx:d"}
 	if strings.Join(kinds, ",") != strings.Join(want, ",") {
 		t.Fatalf("got %v want %v\n%#v", kinds, want, got)
 	}

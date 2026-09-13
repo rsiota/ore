@@ -61,6 +61,9 @@ var (
 	styleDiffHunk = lipgloss.NewStyle().Foreground(lipgloss.Color("#57606a")).Bold(true)
 	// Zen hunk banner — barely-there so @@ noise stays out of the way.
 	styleZenHunk = lipgloss.NewStyle().Foreground(lipgloss.Color("#afb8c1"))
+	// Zen file path — same slate as the subject, but not bold so the commit
+	// message stays the single heavyweight line.
+	styleZenFile = lipgloss.NewStyle().Foreground(colorPrimary)
 
 	styleHelpTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffffff")).Background(colorPrimary)
 	styleHelpSection = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)

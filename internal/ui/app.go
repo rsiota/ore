@@ -2021,19 +2021,19 @@ func (m Model) detailLines() []string {
 // (file banners + code). Hash/author/stats stay out of the way for scanning.
 func (m Model) detailLinesZen(d *git.CommitDetail) []string {
 	var out []string
+	pad := strings.Repeat(" ", cellPad)
 	if m.main == MainBlame {
 		idx := m.blameIndices()
 		if m.blameCursor >= 0 && m.blameCursor < len(idx) {
 			bl := m.blame[idx[m.blameCursor]]
-			out = append(out, styleMuted.Render(fmt.Sprintf("line %d · %s", bl.Line, relativeAge(bl.When))))
+			out = append(out, styleMuted.Render(pad+fmt.Sprintf("line %d · %s", bl.Line, relativeAge(bl.When))))
 		}
 	}
-	out = append(out, styleTitle.Render(d.Commit.Subject))
+	out = append(out, pad+styleTitle.Render(d.Commit.Subject))
 	if diff := strings.TrimRight(d.Diff, "\n"); diff != "" {
-		out = append(out, "")
 		out = append(out, zenDiffLines(diff, m.zenContext)...)
 	} else {
-		out = append(out, "", styleMuted.Render("(no patch)"))
+		out = append(out, styleMuted.Render(pad+"(no patch)"))
 	}
 	return out
 }
@@ -2100,7 +2100,7 @@ func renderDetailLine(line string, width int) string {
 	// A carriage return mid-row sends the cursor to column 0, so wash padding
 	// then paints over the left pane.
 	line = strings.ReplaceAll(line, "\r", "")
-	if line == detailSepMarker {
+	if line == detailSepMarker || line == zenFileRuleMarker {
 		return fitWidth(styleGridBorder.Render(strings.Repeat("─", max(0, width))), width)
 	}
 	switch {

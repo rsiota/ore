@@ -52,12 +52,13 @@ func clampZenContext(n int) int {
 
 // Zen row markers — expanded in renderDetailLine with pane width available.
 const (
-	zenFilePrefix = "\x1ezenf:" // path
-	zenHunkPrefix = "\x1ezenh:" // full @@ header text
-	zenCtxPrefix  = "\x1ezenc:" // num\x1ftext (unchanged context)
-	zenAddPrefix  = "\x1ezena:" // num\x1ftext
-	zenDelPrefix  = "\x1ezend:" // num\x1ftext
-	zenFieldSep   = "\x1f"
+	zenFilePrefix     = "\x1ezenf:"  // path
+	zenFileRuleMarker = "\x1ezenfr"  // full-width rule above/below file path
+	zenHunkPrefix     = "\x1ezenh:"  // full @@ header text
+	zenCtxPrefix      = "\x1ezenc:"  // num\x1ftext (unchanged context)
+	zenAddPrefix      = "\x1ezena:"  // num\x1ftext
+	zenDelPrefix      = "\x1ezend:"  // num\x1ftext
+	zenFieldSep       = "\x1f"
 )
 
 var hunkHeaderRe = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
@@ -114,7 +115,7 @@ func zenDiffLines(diff string, context int) []string {
 			path := pathFromDiffGit(line)
 			if path != "" && path != currentFile {
 				currentFile = path
-				out = append(out, zenFilePrefix+path)
+				out = appendZenFile(out, path)
 			}
 		case strings.HasPrefix(line, "+++ "):
 			path := strings.TrimPrefix(line, "+++ ")
@@ -124,11 +125,7 @@ func zenDiffLines(diff string, context int) []string {
 			}
 			if path != "" && path != currentFile {
 				currentFile = path
-				if len(out) > 0 && strings.HasPrefix(out[len(out)-1], zenFilePrefix) {
-					out[len(out)-1] = zenFilePrefix + path
-				} else {
-					out = append(out, zenFilePrefix+path)
-				}
+				out = appendZenFile(out, path)
 			}
 		case strings.HasPrefix(line, "@@"):
 			flushHunk()
@@ -161,6 +158,25 @@ func zenDiffLines(diff string, context int) []string {
 	}
 	flushHunk()
 	return out
+}
+
+// appendZenFile adds a left-aligned file banner with grid-coloured rules
+// above and below. If the trailing block is already a file banner, only the
+// path is updated (diff --git then +++ b/path).
+func appendZenFile(out []string, path string) []string {
+	n := len(out)
+	if n >= 3 &&
+		out[n-1] == zenFileRuleMarker &&
+		strings.HasPrefix(out[n-2], zenFilePrefix) &&
+		out[n-3] == zenFileRuleMarker {
+		out[n-2] = zenFilePrefix + path
+		return out
+	}
+	if n >= 1 && strings.HasPrefix(out[n-1], zenFilePrefix) {
+		out[n-1] = zenFilePrefix + path
+		return out
+	}
+	return append(out, zenFileRuleMarker, zenFilePrefix+path, zenFileRuleMarker)
 }
 
 // trimZenHunk keeps change lines plus up to context lines of unchanged
@@ -216,9 +232,8 @@ func parseZenNumText(payload string) (num int, text string, ok bool) {
 }
 
 func renderZenFile(path string, width int) string {
-	// Align file banners with code (past the line-number gutter).
-	pad := strings.Repeat(" ", zenGutterCols())
-	return fitWidth(pad+styleTitle.Render(path), width)
+	pad := strings.Repeat(" ", cellPad)
+	return fitWidth(pad+styleZenFile.Render(path), width)
 }
 
 func renderZenHunk(header string, width int) string {
@@ -227,14 +242,19 @@ func renderZenHunk(header string, width int) string {
 	return fitWidth(pad+styleZenHunk.Render(header), width)
 }
 
-// zenGutterNums is the digit width; zenGutterCols is digits + the │ rule.
+// zenGutterNums is the digit width. The full gutter is:
+// cellPad + digits + one space + │  (matches filepath left pad).
 const zenGutterNums = 5
 
-func zenGutterCols() int { return zenGutterNums + 1 }
+func zenGutterCols() int {
+	return cellPad + zenGutterNums + 1 + 1 // pad + digits + gap + rule
+}
 
 func zenGutter(num int) string {
-	return styleZenHunk.Render(fmt.Sprintf("%*d", zenGutterNums, num)) +
-		styleGridBorder.Render("│")
+	left := strings.Repeat(" ", cellPad)
+	nums := styleZenHunk.Render(fmt.Sprintf("%*d", zenGutterNums, num))
+	gap := styleZenHunk.Render(" ")
+	return left + nums + gap + styleGridBorder.Render("│")
 }
 
 func renderZenContext(num int, text string, width int) string {
