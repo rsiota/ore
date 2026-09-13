@@ -85,6 +85,7 @@ func TestClampFrameExactHeight(t *testing.T) {
 
 func TestDetailLinesSplitsStat(t *testing.T) {
 	m := Model{
+		diffMode: DiffUnified,
 		detail: &git.CommitDetail{
 			Commit: git.Commit{
 				Hash:      "abc",
@@ -116,6 +117,7 @@ func TestDetailLinesSplitsStat(t *testing.T) {
 
 func TestDetailLinesHierarchy(t *testing.T) {
 	m := Model{
+		diffMode: DiffUnified,
 		detail: &git.CommitDetail{
 			Commit: git.Commit{
 				Hash:      "abc123",
@@ -141,8 +143,11 @@ func TestDetailLinesHierarchy(t *testing.T) {
 		if plain == detailSepMarker {
 			sepAt = i
 		}
-		if strings.HasPrefix(plain, "diff --git") {
-			diffAt = i
+		if strings.HasPrefix(plain, "diff --git") || strings.HasPrefix(plain, zenFilePrefix) ||
+			strings.HasPrefix(plain, zenAddPrefix) {
+			if diffAt < 0 {
+				diffAt = i
+			}
 		}
 	}
 	if subjectAt < 0 || sepAt < 0 || diffAt < 0 {
@@ -150,6 +155,46 @@ func TestDetailLinesHierarchy(t *testing.T) {
 	}
 	if !(subjectAt < sepAt && sepAt < diffAt) {
 		t.Fatalf("want subject < rule < diff, got %d < %d < %d", subjectAt, sepAt, diffAt)
+	}
+}
+
+func TestDetailLinesZenBare(t *testing.T) {
+	m := Model{
+		diffMode:   DiffZen,
+		zenContext: 3,
+		detail: &git.CommitDetail{
+			Commit: git.Commit{
+				Hash:    "abc123",
+				Author:  "Ada",
+				Email:   "ada@ex",
+				Subject: "Refactor auth",
+				Files:   1,
+			},
+			Body: "secret body",
+			Stat: " a.txt | 1 +\n",
+			Diff: "diff --git a/x b/x\n+++ b/x\n@@ -1 +1 @@\n+hi\n",
+		},
+	}
+	lines := m.detailLines()
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "Ada") || strings.Contains(joined, "abc123") ||
+		strings.Contains(joined, "secret body") || strings.Contains(joined, "a.txt") {
+		t.Fatalf("zen leaked metadata: %#v", lines)
+	}
+	if !strings.Contains(joined, "Refactor auth") {
+		t.Fatal("want subject")
+	}
+	var sawFile, sawCode bool
+	for _, line := range lines {
+		if strings.HasPrefix(line, zenFilePrefix) {
+			sawFile = true
+		}
+		if strings.HasPrefix(line, zenAddPrefix) {
+			sawCode = true
+		}
+	}
+	if !sawFile || !sawCode {
+		t.Fatalf("want file+code, file=%v code=%v %#v", sawFile, sawCode, lines)
 	}
 }
 

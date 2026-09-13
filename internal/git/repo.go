@@ -211,16 +211,20 @@ type FileChange struct {
 }
 
 // Show returns message + numstat + patch for hash (whole commit).
-func (r *Repo) Show(ctx context.Context, hash string) (CommitDetail, error) {
-	return r.show(ctx, hash, "")
+// unified is the git -U context size (clamped; use 3 for the usual default).
+func (r *Repo) Show(ctx context.Context, hash string, unified int) (CommitDetail, error) {
+	return r.show(ctx, hash, "", unified)
 }
 
 // ShowPath is Show limited to a single path (path-scoped stat + patch).
-func (r *Repo) ShowPath(ctx context.Context, hash, path string) (CommitDetail, error) {
-	return r.show(ctx, hash, path)
+func (r *Repo) ShowPath(ctx context.Context, hash, path string, unified int) (CommitDetail, error) {
+	return r.show(ctx, hash, path, unified)
 }
 
-func (r *Repo) show(ctx context.Context, hash, path string) (CommitDetail, error) {
+func (r *Repo) show(ctx context.Context, hash, path string, unified int) (CommitDetail, error) {
+	if unified < 0 {
+		unified = 3
+	}
 	var detail CommitDetail
 
 	metaOut, err := r.run(ctx, "show", "-s",
@@ -257,8 +261,9 @@ func (r *Repo) show(ctx context.Context, hash, path string) (CommitDetail, error
 	}
 	detail.Body = body
 
+	uFlag := fmt.Sprintf("-U%d", unified)
 	numstatArgs := []string{"show", "--format=", "--numstat", "--find-renames", hash}
-	diffArgs := []string{"show", "--format=", "--patch", "--find-renames", hash}
+	diffArgs := []string{"show", "--format=", "--patch", "--find-renames", uFlag, hash}
 	statArgs := []string{"show", "--format=", "--stat", "--find-renames", hash}
 	if path != "" {
 		numstatArgs = append(numstatArgs, "--", path)

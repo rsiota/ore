@@ -59,6 +59,8 @@ var (
 	// Detail pane hierarchy: meta muted, subject bold, hunk headers labelled.
 	styleDiffMeta = lipgloss.NewStyle().Foreground(lipgloss.Color("#656d76"))
 	styleDiffHunk = lipgloss.NewStyle().Foreground(lipgloss.Color("#57606a")).Bold(true)
+	// Zen hunk banner — barely-there so @@ noise stays out of the way.
+	styleZenHunk = lipgloss.NewStyle().Foreground(lipgloss.Color("#afb8c1"))
 
 	styleHelpTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffffff")).Background(colorPrimary)
 	styleHelpSection = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)

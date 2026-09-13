@@ -74,7 +74,7 @@ func TestOpenAndCommitLog(t *testing.T) {
 		t.Errorf("oldest subject = %q", commits[1].Subject)
 	}
 
-	detail, err := repo.Show(ctx, commits[0].Hash)
+	detail, err := repo.Show(ctx, commits[0].Hash, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestFileHistoryFollowsRename(t *testing.T) {
 		t.Errorf("oldest = %q", hist[len(hist)-1].Subject)
 	}
 
-	detail, err := repo.ShowPath(ctx, hist[0].Hash, "new.txt")
+	detail, err := repo.ShowPath(ctx, hist[0].Hash, "new.txt", 3)
 	if err != nil {
 		t.Fatal(err)
 	}

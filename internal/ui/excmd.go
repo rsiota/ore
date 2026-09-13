@@ -133,7 +133,7 @@ func (m *Model) exGoto(args []string) tea.Cmd {
 		m.detailExpectHash = args[0]
 		m.loadingDetail = true
 		m.status = fmt.Sprintf("goto %s", shortHash(prefix))
-		return loadDetailCmd(m.repo, args[0], "")
+		return loadDetailCmd(m.repo, args[0], "", m.zenContext)
 	case 1:
 		m.filter = ""
 		m.filterTyping = false

@@ -29,7 +29,7 @@ type LineRelations struct {
 // Relations returns parents, children, and files for hash.
 func (r *Repo) Relations(ctx context.Context, hash string) (CommitRelations, error) {
 	var out CommitRelations
-	detail, err := r.Show(ctx, hash)
+	detail, err := r.Show(ctx, hash, 3)
 	if err != nil {
 		return out, err
 	}

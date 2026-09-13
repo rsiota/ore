@@ -87,6 +87,8 @@ type Model struct {
 	detailPath       string // path the current detail payload was loaded with ("" = whole commit)
 	detailExpectHash string // if set, detailLoadedMsg may target this hash (e.g. :goto)
 	detailOffset     int
+	diffMode         DiffMode // zen (default) or unified patch
+	zenContext       int      // git -U / in-hunk context lines
 	loading          bool
 	loadingDetail    bool
 	err              string
@@ -126,6 +128,8 @@ func New(repo *git.Repo) Model {
 		fileSortCol:    -1,
 		historySortCol: -1,
 		blameSortCol:   -1,
+		diffMode:       DiffZen,
+		zenContext:     defaultZenContext,
 	}
 }
 
@@ -176,7 +180,7 @@ func loadCommitsCmd(repo *git.Repo) tea.Cmd {
 	}
 }
 
-func loadDetailCmd(repo *git.Repo, hash, path string) tea.Cmd {
+func loadDetailCmd(repo *git.Repo, hash, path string, unified int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -185,9 +189,9 @@ func loadDetailCmd(repo *git.Repo, hash, path string) tea.Cmd {
 			err    error
 		)
 		if path != "" {
-			detail, err = repo.ShowPath(ctx, hash, path)
+			detail, err = repo.ShowPath(ctx, hash, path, unified)
 		} else {
-			detail, err = repo.Show(ctx, hash)
+			detail, err = repo.Show(ctx, hash, unified)
 		}
 		return detailLoadedMsg{hash: hash, path: path, detail: detail, err: err}
 	}
@@ -473,6 +477,40 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.palette.Open()
 		m.status = "command palette"
 		return m, nil
+	case "D":
+		m.chordG = false
+		m.diffMode = m.diffMode.Next()
+		m.detailOffset = 0
+		m.status = "diff " + m.diffMode.Label()
+		return m, nil
+	case "[":
+		if m.diffMode != DiffZen {
+			break
+		}
+		m.chordG = false
+		next := clampZenContext(m.zenContext - 1)
+		if next == m.zenContext {
+			m.status = fmt.Sprintf("diff context %d", m.zenContext)
+			return m, nil
+		}
+		m.zenContext = next
+		m.detailOffset = 0
+		m.status = fmt.Sprintf("diff context %d", m.zenContext)
+		return m, m.reloadDetail()
+	case "]":
+		if m.diffMode != DiffZen {
+			break
+		}
+		m.chordG = false
+		next := clampZenContext(m.zenContext + 1)
+		if next == m.zenContext {
+			m.status = fmt.Sprintf("diff context %d", m.zenContext)
+			return m, nil
+		}
+		m.zenContext = next
+		m.detailOffset = 0
+		m.status = fmt.Sprintf("diff context %d", m.zenContext)
+		return m, m.reloadDetail()
 	case "ctrl+r":
 		m.chordG = false
 		return m, m.refresh()
@@ -605,7 +643,7 @@ func (m Model) activateRelation() (tea.Model, tea.Cmd) {
 		m.detailFilterPath = ""
 		m.loadingDetail = true
 		m.main = MainCommits
-		return m, loadDetailCmd(m.repo, row.hash, "")
+		return m, loadDetailCmd(m.repo, row.hash, "", m.zenContext)
 	case relFile:
 		path := row.path
 		m.explorer.Close()
@@ -970,7 +1008,7 @@ func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailFilterPath = ""
 		m.loadingDetail = true
 		m.detailOffset = 0
-		return m, loadDetailCmd(m.repo, hash, "")
+		return m, loadDetailCmd(m.repo, hash, "", m.zenContext)
 	}
 	return m, nil
 }
@@ -1310,7 +1348,7 @@ func (m *Model) reloadDetail() tea.Cmd {
 	m.detailFilterPath = path
 	m.loadingDetail = true
 	m.detailOffset = 0
-	return loadDetailCmd(m.repo, hash, path)
+	return loadDetailCmd(m.repo, hash, path, m.zenContext)
 }
 
 // refresh reloads the commit log (and re-fetches the current view), matching
@@ -1973,6 +2011,34 @@ func (m Model) detailLines() []string {
 		return []string{styleMuted.Render("(no commit selected)")}
 	}
 	d := m.detail
+	if m.diffMode == DiffZen {
+		return m.detailLinesZen(d)
+	}
+	return m.detailLinesUnified(d)
+}
+
+// detailLinesZen keeps chrome to a bare minimum: subject, then the patch
+// (file banners + code). Hash/author/stats stay out of the way for scanning.
+func (m Model) detailLinesZen(d *git.CommitDetail) []string {
+	var out []string
+	if m.main == MainBlame {
+		idx := m.blameIndices()
+		if m.blameCursor >= 0 && m.blameCursor < len(idx) {
+			bl := m.blame[idx[m.blameCursor]]
+			out = append(out, styleMuted.Render(fmt.Sprintf("line %d · %s", bl.Line, relativeAge(bl.When))))
+		}
+	}
+	out = append(out, styleTitle.Render(d.Commit.Subject))
+	if diff := strings.TrimRight(d.Diff, "\n"); diff != "" {
+		out = append(out, "")
+		out = append(out, zenDiffLines(diff, m.zenContext)...)
+	} else {
+		out = append(out, "", styleMuted.Render("(no patch)"))
+	}
+	return out
+}
+
+func (m Model) detailLinesUnified(d *git.CommitDetail) []string {
 	var out []string
 
 	// Optional blame context sits above commit meta.
@@ -2008,10 +2074,11 @@ func (m Model) detailLines() []string {
 
 	// Rule sits directly under the message (no blank gap).
 	out = append(out, detailSepMarker)
-	out = append(out, fmt.Sprintf("%s  %s  %s",
+	out = append(out, fmt.Sprintf("%s  %s  %s  %s",
 		styleMuted.Render(fmt.Sprintf("%d files", d.Commit.Files)),
 		styleAdd.Render(fmt.Sprintf("+%d", d.Commit.Additions)),
 		styleDel.Render(fmt.Sprintf("-%d", d.Commit.Deletions)),
+		styleMuted.Render(fmt.Sprintf("· %s ·U%d · D [/]", m.diffMode.Label(), m.zenContext)),
 	))
 	if stat := strings.TrimRight(d.Stat, "\n"); stat != "" {
 		for _, line := range strings.Split(stat, "\n") {
@@ -2035,6 +2102,24 @@ func renderDetailLine(line string, width int) string {
 	line = strings.ReplaceAll(line, "\r", "")
 	if line == detailSepMarker {
 		return fitWidth(styleGridBorder.Render(strings.Repeat("─", max(0, width))), width)
+	}
+	switch {
+	case strings.HasPrefix(line, zenFilePrefix):
+		return renderZenFile(strings.TrimPrefix(line, zenFilePrefix), width)
+	case strings.HasPrefix(line, zenHunkPrefix):
+		return renderZenHunk(strings.TrimPrefix(line, zenHunkPrefix), width)
+	case strings.HasPrefix(line, zenCtxPrefix):
+		if num, text, ok := parseZenNumText(strings.TrimPrefix(line, zenCtxPrefix)); ok {
+			return renderZenContext(num, text, width)
+		}
+	case strings.HasPrefix(line, zenAddPrefix):
+		if num, text, ok := parseZenNumText(strings.TrimPrefix(line, zenAddPrefix)); ok {
+			return renderZenChange(true, num, text, width)
+		}
+	case strings.HasPrefix(line, zenDelPrefix):
+		if num, text, ok := parseZenNumText(strings.TrimPrefix(line, zenDelPrefix)); ok {
+			return renderZenChange(false, num, text, width)
+		}
 	}
 	if strings.Contains(line, "\x1b[") {
 		return fitWidth(line, width)

@@ -26,6 +26,8 @@ func registry() []Section {
 				{":", []string{":"}, "ex command line", ":"},
 				{"ctrl+p", []string{"ctrl+p"}, "command palette", "ctrl+p"},
 				{"ctrl+r", []string{"ctrl+r"}, "refresh commit log", ""},
+				{"D", []string{"D"}, "cycle diff view (zen ↔ unified)", "D"},
+				{"[/]", []string{"[", "]"}, "less / more zen diff context", ""},
 				{"q / ctrl+c", []string{"q", "ctrl+c"}, "quit", "q"},
 				{"tab", []string{"tab"}, "focus main ↔ detail", "tab"},
 				{"esc / backspace", []string{"esc", "backspace"}, "go back / close overlay", "esc"},
@@ -142,15 +144,15 @@ func statusHintList(main MainView, explorerOpen bool) []string {
 	}
 	switch main {
 	case MainCommits:
-		return append([]string{"j/k"}, append(hintsForSection("Commit grid"), "gr", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Commit grid"), "gr", "D", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainFiles:
-		return append([]string{"j/k"}, append(hintsForSection("Files grid"), "gr", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Files grid"), "gr", "D", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainHistory:
-		return append([]string{"j/k"}, append(hintsForSection("History grid"), "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("History grid"), "D", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainBlame:
-		return append([]string{"j/k"}, append(hintsForSection("Blame"), "gr", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Blame"), "gr", "D", "tab", "ctrl+p", "?", "esc", "q")...)
 	default:
-		return []string{"j/k", "enter", "tab", "ctrl+p", "?", "esc", "q"}
+		return []string{"j/k", "enter", "tab", "D", "ctrl+p", "?", "esc", "q"}
 	}
 }
 
