@@ -12,7 +12,7 @@ go run ./cmd/ore /path/to/repo
 go run ./cmd/ore -C /path/to/repo
 ```
 
-**Keys:** `ctrl+p` palette · `D` zen/unified diff · `[`/`]` zen context · `:` commands · `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `esc` back · `q` quit
+**Keys:** `ctrl+p` palette · `D` zen/unified diff · `w` wrap · `[`/`]` zen context · `:` commands · `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `esc` back · `q` quit
 
 **Commit grid:** soft graph · `h`/`l` columns · `o` cycle sort · `/` filters the active column
 

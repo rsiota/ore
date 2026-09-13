@@ -39,7 +39,7 @@ func TestRegistryHasHelpAndFilter(t *testing.T) {
 
 func TestStatusHintsAreKeyOnly(t *testing.T) {
 	got := statusHints(MainCommits, false)
-	if got != "j/k/h/l/o///enter/gr/D/tab/ctrl+p/?/esc/q" {
+	if got != "j/k/h/l/o///enter/gr/D/w/tab/ctrl+p/?/esc/q" {
 		// "/" is a hint key, so it appears as an empty group between slashes (creel-style).
 		t.Fatalf("commits hints = %q", got)
 	}

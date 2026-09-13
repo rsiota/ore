@@ -89,6 +89,7 @@ type Model struct {
 	detailOffset     int
 	diffMode         DiffMode // zen (default) or unified patch
 	zenContext       int      // git -U / in-hunk context lines
+	detailWrap       bool     // soft-wrap long detail lines
 	loading          bool
 	loadingDetail    bool
 	err              string
@@ -482,6 +483,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.diffMode = m.diffMode.Next()
 		m.detailOffset = 0
 		m.status = "diff " + m.diffMode.Label()
+		return m, nil
+	case "w":
+		m.chordG = false
+		m.detailWrap = !m.detailWrap
+		m.detailOffset = 0
+		if m.detailWrap {
+			m.status = "diff wrap on"
+		} else {
+			m.status = "diff wrap off"
+		}
 		return m, nil
 	case "[":
 		if m.diffMode != DiffZen {
@@ -1303,7 +1314,7 @@ func (m Model) followBlameLine() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	lines := m.detailLines()
+	lines := m.detailVisualLines()
 	page := max(1, m.detailViewHeight()-1)
 	switch msg.String() {
 	case "j", "down":
@@ -1533,6 +1544,23 @@ func (m Model) mainPaneWidth() int {
 		return max(20, m.width)
 	}
 	return max(40, m.width/2)
+}
+
+func (m Model) detailInnerWidth() int {
+	if m.width < 80 {
+		return max(1, m.width-borderOverhead)
+	}
+	dw := m.width - m.mainPaneWidth()
+	return max(1, dw-borderOverhead)
+}
+
+// detailVisualLines expands logical detail rows for the current wrap mode.
+func (m Model) detailVisualLines() []string {
+	body := m.detailLines()
+	if m.loadingDetail && m.detail == nil {
+		body = []string{styleMuted.Render(" loading…")}
+	}
+	return expandDetailRows(body, m.detailInnerWidth(), m.detailWrap)
 }
 
 func (m Model) borderForFocus(f Focus) lipgloss.Color {
@@ -1990,18 +2018,23 @@ func blameAgeStyle(when, newest, oldest time.Time) lipgloss.Style {
 }
 
 func (m Model) renderDetailPane(width, height int) string {
-	var lines []string
-	body := m.detailLines()
 	h := height
 	if h < 1 {
 		h = 1
 	}
+	body := m.detailLines()
 	if m.loadingDetail && m.detail == nil {
 		body = []string{styleMuted.Render(" loading…")}
 	}
-	end := min(len(body), m.detailOffset+h)
-	for i := m.detailOffset; i < end; i++ {
-		lines = append(lines, renderDetailLine(body[i], width))
+	visual := expandDetailRows(body, width, m.detailWrap)
+	off := m.detailOffset
+	if off > max(0, len(visual)-1) {
+		off = max(0, len(visual)-1)
+	}
+	end := min(len(visual), off+h)
+	var lines []string
+	if off < len(visual) {
+		lines = append(lines, visual[off:end]...)
 	}
 	return padPane(lines, width, height)
 }
@@ -2078,7 +2111,7 @@ func (m Model) detailLinesUnified(d *git.CommitDetail) []string {
 		styleMuted.Render(fmt.Sprintf("%d files", d.Commit.Files)),
 		styleAdd.Render(fmt.Sprintf("+%d", d.Commit.Additions)),
 		styleDel.Render(fmt.Sprintf("-%d", d.Commit.Deletions)),
-		styleMuted.Render(fmt.Sprintf("· %s ·U%d · D [/]", m.diffMode.Label(), m.zenContext)),
+		styleMuted.Render(fmt.Sprintf("· %s ·U%d · D [/] · w", m.diffMode.Label(), m.zenContext)),
 	))
 	if stat := strings.TrimRight(d.Stat, "\n"); stat != "" {
 		for _, line := range strings.Split(stat, "\n") {
@@ -2095,47 +2128,79 @@ func (m Model) detailLinesUnified(d *git.CommitDetail) []string {
 // detailSepMarker is expanded to a full-width muted rule in renderDetailLine.
 const detailSepMarker = "\x1edetail-sep"
 
+func expandDetailRows(body []string, width int, wrap bool) []string {
+	out := make([]string, 0, len(body))
+	for _, line := range body {
+		out = append(out, renderDetailRows(line, width, wrap)...)
+	}
+	return out
+}
+
 func renderDetailLine(line string, width int) string {
+	rows := renderDetailRows(line, width, false)
+	if len(rows) == 0 {
+		return fitWidth("", width)
+	}
+	return rows[0]
+}
+
+func renderDetailRows(line string, width int, wrap bool) []string {
 	// Git diffs from CRLF files keep a trailing \r after Split(..., "\n").
 	// A carriage return mid-row sends the cursor to column 0, so wash padding
 	// then paints over the left pane.
 	line = strings.ReplaceAll(line, "\r", "")
 	if line == detailSepMarker || line == zenFileRuleMarker {
-		return fitWidth(styleGridBorder.Render(strings.Repeat("─", max(0, width))), width)
+		return []string{fitWidth(styleGridBorder.Render(strings.Repeat("─", max(0, width))), width)}
 	}
 	switch {
 	case strings.HasPrefix(line, zenFilePrefix):
-		return renderZenFile(strings.TrimPrefix(line, zenFilePrefix), width)
+		return renderZenFile(strings.TrimPrefix(line, zenFilePrefix), width, wrap)
 	case strings.HasPrefix(line, zenHunkPrefix):
-		return renderZenHunk(strings.TrimPrefix(line, zenHunkPrefix), width)
+		return renderZenHunk(strings.TrimPrefix(line, zenHunkPrefix), width, wrap)
 	case strings.HasPrefix(line, zenCtxPrefix):
 		if num, text, ok := parseZenNumText(strings.TrimPrefix(line, zenCtxPrefix)); ok {
-			return renderZenContext(num, text, width)
+			return renderZenContext(num, text, width, wrap)
 		}
 	case strings.HasPrefix(line, zenAddPrefix):
 		if num, text, ok := parseZenNumText(strings.TrimPrefix(line, zenAddPrefix)); ok {
-			return renderZenChange(true, num, text, width)
+			return renderZenChange(true, num, text, width, wrap)
 		}
 	case strings.HasPrefix(line, zenDelPrefix):
 		if num, text, ok := parseZenNumText(strings.TrimPrefix(line, zenDelPrefix)); ok {
-			return renderZenChange(false, num, text, width)
+			return renderZenChange(false, num, text, width, wrap)
 		}
 	}
 	if strings.Contains(line, "\x1b[") {
-		return fitWidth(line, width)
+		return []string{fitWidth(line, width)}
 	}
 	switch {
 	case isDiffFileHeader(line):
-		return cell(styleDiffMeta, line, width)
+		return renderWrappedCell(styleDiffMeta, line, width, wrap)
 	case strings.HasPrefix(line, "@@"):
-		return cell(styleDiffHunk, line, width)
+		return renderWrappedCell(styleDiffHunk, line, width, wrap)
 	case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
-		return cell(styleAddWash, line, width)
+		return renderWrappedCell(styleAddWash, line, width, wrap)
 	case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
-		return cell(styleDelWash, line, width)
+		return renderWrappedCell(styleDelWash, line, width, wrap)
 	default:
-		return fitWidth(line, width)
+		return renderWrappedCell(lipgloss.NewStyle(), line, width, wrap)
 	}
+}
+
+func renderWrappedCell(st lipgloss.Style, text string, width int, wrap bool) []string {
+	bodyW := width - cellPad
+	if bodyW < 1 {
+		bodyW = width
+	}
+	if !wrap {
+		return []string{fitWidth(cell(st, text, bodyW), width)}
+	}
+	chunks := wrapDisplay(text, bodyW)
+	rows := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		rows = append(rows, fitWidth(cell(st, c, bodyW), width))
+	}
+	return rows
 }
 
 func isDiffFileHeader(line string) bool {

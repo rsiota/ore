@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 // DiffMode selects how the detail pane renders the patch body.
@@ -231,15 +232,38 @@ func parseZenNumText(payload string) (num int, text string, ok bool) {
 	return n, text, true
 }
 
-func renderZenFile(path string, width int) string {
+func renderZenFile(path string, width int, wrap bool) []string {
 	pad := strings.Repeat(" ", cellPad)
-	return fitWidth(pad+styleZenFile.Render(path), width)
+	bodyW := width - cellPad - cellPad
+	if bodyW < 1 {
+		bodyW = max(1, width-cellPad)
+	}
+	if !wrap {
+		return []string{fitWidth(pad+styleZenFile.Render(runewidth.Truncate(path, bodyW, "…")), width)}
+	}
+	chunks := wrapDisplay(path, bodyW)
+	rows := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		rows = append(rows, fitWidth(pad+styleZenFile.Render(c), width))
+	}
+	return rows
 }
 
-func renderZenHunk(header string, width int) string {
-	// Align @@ with code, not with the line-number column.
+func renderZenHunk(header string, width int, wrap bool) []string {
 	pad := strings.Repeat(" ", zenGutterCols())
-	return fitWidth(pad+styleZenHunk.Render(header), width)
+	bodyW := width - zenGutterCols() - cellPad
+	if bodyW < 1 {
+		bodyW = max(1, width-zenGutterCols())
+	}
+	if !wrap {
+		return []string{fitWidth(pad+styleZenHunk.Render(runewidth.Truncate(header, bodyW, "…")), width)}
+	}
+	chunks := wrapDisplay(header, bodyW)
+	rows := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		rows = append(rows, fitWidth(pad+styleZenHunk.Render(c), width))
+	}
+	return rows
 }
 
 // zenGutterNums is the digit width. The full gutter is:
@@ -257,24 +281,40 @@ func zenGutter(num int) string {
 	return left + nums + gap + styleGridBorder.Render("│")
 }
 
-func renderZenContext(num int, text string, width int) string {
-	gutter := zenGutter(num)
-	bodyW := width - lipgloss.Width(gutter)
-	if bodyW < 1 {
-		return fitWidth(styleMuted.Render(text), width)
-	}
-	return fitWidth(gutter+cell(styleMuted, text, bodyW), width)
+func zenGutterCont() string {
+	return strings.Repeat(" ", cellPad+zenGutterNums+1) + styleGridBorder.Render("│")
 }
 
-func renderZenChange(add bool, num int, text string, width int) string {
-	gutter := zenGutter(num)
-	bodyW := width - lipgloss.Width(gutter)
+func renderZenContext(num int, text string, width int, wrap bool) []string {
+	return renderZenCode(styleMuted, num, text, width, wrap)
+}
+
+func renderZenChange(add bool, num int, text string, width int, wrap bool) []string {
 	st := styleDelWash
 	if add {
 		st = styleAddWash
 	}
+	return renderZenCode(st, num, text, width, wrap)
+}
+
+func renderZenCode(st lipgloss.Style, num int, text string, width int, wrap bool) []string {
+	gutter := zenGutter(num)
+	bodyW := width - lipgloss.Width(gutter) - cellPad
 	if bodyW < 1 {
-		return cell(st, text, width)
+		bodyW = max(1, width-lipgloss.Width(gutter))
 	}
-	return fitWidth(gutter+cell(st, text, bodyW), width)
+	if !wrap {
+		return []string{fitWidth(gutter+cell(st, text, bodyW), width)}
+	}
+	chunks := wrapDisplay(text, bodyW)
+	cont := zenGutterCont()
+	rows := make([]string, 0, len(chunks))
+	for i, c := range chunks {
+		g := gutter
+		if i > 0 {
+			g = cont
+		}
+		rows = append(rows, fitWidth(g+cell(st, c, bodyW), width))
+	}
+	return rows
 }

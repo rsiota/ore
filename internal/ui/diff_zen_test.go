@@ -113,16 +113,19 @@ func TestZenDiffSeparateHunkHeaders(t *testing.T) {
 
 func TestRenderZenChangeWidth(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
-	got := renderZenChange(true, 42, "hello world", 24)
-	if w := lipgloss.Width(got); w != 24 {
-		t.Fatalf("width=%d want 24 (%q)", w, got)
+	got := renderZenChange(true, 42, "hello world", 24, false)
+	if len(got) != 1 {
+		t.Fatalf("rows=%d", len(got))
 	}
-	if !strings.Contains(got, "│") {
-		t.Fatalf("expected gutter rule: %q", got)
+	if w := lipgloss.Width(got[0]); w != 24 {
+		t.Fatalf("width=%d want 24 (%q)", w, got[0])
 	}
-	hunk := renderZenHunk("@@ -1 +1 @@", 40)
-	if w := lipgloss.Width(hunk); w != 40 {
-		t.Fatalf("hunk width=%d", w)
+	if !strings.Contains(got[0], "│") {
+		t.Fatalf("expected gutter rule: %q", got[0])
+	}
+	hunk := renderZenHunk("@@ -1 +1 @@", 40, false)
+	if len(hunk) != 1 || lipgloss.Width(hunk[0]) != 40 {
+		t.Fatalf("hunk=%v", hunk)
 	}
 }
 
@@ -131,9 +134,12 @@ func TestZenGutterAlignsHunkWithCode(t *testing.T) {
 	if w := lipgloss.Width(zenGutter(12)); w != zenGutterCols() {
 		t.Fatalf("gutter width %d, want %d", w, zenGutterCols())
 	}
-	code := renderZenContext(12, "hello", 40)
-	hunk := renderZenHunk("@@ -1 +1 @@ note", 40)
-	if lipgloss.Width(code) != 40 || lipgloss.Width(hunk) != 40 {
+	code := renderZenContext(12, "hello", 40, false)
+	hunk := renderZenHunk("@@ -1 +1 @@ note", 40, false)
+	if len(code) != 1 || len(hunk) != 1 {
+		t.Fatal("row counts")
+	}
+	if lipgloss.Width(code[0]) != 40 || lipgloss.Width(hunk[0]) != 40 {
 		t.Fatal("row widths")
 	}
 }
