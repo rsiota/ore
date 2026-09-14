@@ -67,6 +67,8 @@ type Grid struct {
 	SkipStripeCols []int
 	// SkipCursorPaintCols never get the blue cursor cell (blame code column).
 	SkipCursorPaintCols []int
+	// RightAlignCols right-align cell content (and headers) within the column.
+	RightAlignCols []int
 	// MuteCols render muted when not otherwise styled (quiet blame gutter).
 	MuteCols []int
 	// HScrollCol / HScroll shift a column's content left for long cells (blame code).
@@ -316,27 +318,47 @@ func (g Grid) renderHeader() string {
 				label = name + a
 			}
 		}
-		parts[i] = renderHeaderCell(label, g.widthAt(i), g.Focused && i == g.CursorCol)
+		parts[i] = renderHeaderCell(label, g.widthAt(i), g.Focused && i == g.CursorCol, g.rightAlign(i))
 	}
 	return fitWidth(g.joinVisibleCols(parts, g.colSep()), g.Width)
 }
 
 // renderHeaderCell draws a creel-style header: blue text, with underline
 // scoped to the word when selected (padding stays un-underlined).
-func renderHeaderCell(label string, totalWidth int, selected bool) string {
+func renderHeaderCell(label string, totalWidth int, selected bool, right bool) string {
 	inner := totalWidth - 2*cellPad
 	if inner < 1 {
 		inner = 1
 	}
-	content := padTrim(label, inner)
+	var content string
+	if right {
+		content = padTrimRight(label, inner)
+	} else {
+		content = padTrim(label, inner)
+	}
 	pad := strings.Repeat(" ", cellPad)
 	if !selected {
 		return styleGridHeader.Render(pad + content + pad)
 	}
-	text := strings.TrimRight(content, " ")
-	trail := inner - runewidth.StringWidth(text)
+	text := strings.TrimSpace(content)
+	lead := 0
+	trail := 0
+	if right {
+		lead = inner - runewidth.StringWidth(text)
+		if lead < 0 {
+			lead = 0
+		}
+	} else {
+		trail = inner - runewidth.StringWidth(text)
+		if trail < 0 {
+			trail = 0
+		}
+	}
 	var b strings.Builder
 	b.WriteString(styleGridHeader.Render(pad))
+	if lead > 0 {
+		b.WriteString(styleGridHeader.Render(strings.Repeat(" ", lead)))
+	}
 	b.WriteString(styleGridHeader.Underline(true).Render(text))
 	if trail > 0 {
 		b.WriteString(styleGridHeader.Render(strings.Repeat(" ", trail)))
@@ -411,24 +433,34 @@ func (g Grid) renderRow(rowIdx int) string {
 
 // padCellAt pads a cell, applying HScroll for HScrollCol when set.
 func (g Grid) padCellAt(s string, col int) string {
+	right := g.rightAlign(col)
 	if g.HScroll > 0 && col == g.HScrollCol {
 		rest := displaySkip(s, g.HScroll)
 		inner := g.widthAt(col) - 2*cellPad
 		if inner < 1 {
-			return padCell(rest, g.widthAt(col))
+			return padCellAlign(rest, g.widthAt(col), right)
 		}
 		// Leading ellipsis marks that content continues to the left.
 		marker := "…"
 		mw := runewidth.StringWidth(marker)
 		bodyW := inner - mw
 		if bodyW < 1 {
-			return padCell(rest, g.widthAt(col))
+			return padCellAlign(rest, g.widthAt(col), right)
 		}
 		body := runewidth.Truncate(rest, bodyW, "…")
 		pad := strings.Repeat(" ", cellPad)
 		return pad + runewidth.FillRight(marker+body, inner) + pad
 	}
-	return padCell(s, g.widthAt(col))
+	return padCellAlign(s, g.widthAt(col), right)
+}
+
+func (g Grid) rightAlign(col int) bool {
+	for _, c := range g.RightAlignCols {
+		if c == col {
+			return true
+		}
+	}
+	return false
 }
 
 // renderEmptyRow fills a viewport slot past the last data row. When striping
@@ -503,8 +535,19 @@ func padTrim(s string, width int) string {
 	return runewidth.FillRight(runewidth.Truncate(s, width, "…"), width)
 }
 
+func padTrimRight(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	return runewidth.FillLeft(runewidth.Truncate(s, width, "…"), width)
+}
+
 // padCell truncates content to fit inside totalWidth with cellPad spaces on each side.
 func padCell(s string, totalWidth int) string {
+	return padCellAlign(s, totalWidth, false)
+}
+
+func padCellAlign(s string, totalWidth int, right bool) string {
 	inner := totalWidth - 2*cellPad
 	if inner < 1 {
 		inner = 1
@@ -513,5 +556,8 @@ func padCell(s string, totalWidth int) string {
 		}
 	}
 	pad := strings.Repeat(" ", cellPad)
+	if right {
+		return pad + padTrimRight(s, inner) + pad
+	}
 	return pad + padTrim(s, inner) + pad
 }

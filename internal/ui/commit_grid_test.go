@@ -125,8 +125,8 @@ func TestGridInnerBorders(t *testing.T) {
 	if g.Widths[0] < runewidth.StringWidth("hash")+1+2*cellPad {
 		t.Fatalf("column width should include cell padding: %d", g.Widths[0])
 	}
-	sel := renderHeaderCell("hash", 10, true)
-	plain := renderHeaderCell("hash", 10, false)
+	sel := renderHeaderCell("hash", 10, true, false)
+	plain := renderHeaderCell("hash", 10, false, false)
 	if !strings.Contains(sel, "\x1b[") {
 		t.Fatal("selected header should be styled")
 	}

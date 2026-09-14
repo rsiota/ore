@@ -52,7 +52,7 @@ func blameColIsHidden(fold, col int) bool {
 func blameCell(b git.BlameLine, col int) string {
 	switch col {
 	case blameColLine:
-		return fmt.Sprintf("%d", b.Line)
+		return blameLineCell(b.Line, false)
 	case blameColCommit:
 		return b.ShortHash
 	case blameColAge:
@@ -66,12 +66,23 @@ func blameCell(b git.BlameLine, col int) string {
 	}
 }
 
+// blameCursorMark marks the active blame row in the line gutter.
+const blameCursorMark = "›"
+
+func blameLineCell(line int, active bool) string {
+	mark := " "
+	if active {
+		mark = blameCursorMark
+	}
+	return mark + fmt.Sprintf("%d", line)
+}
+
 // blameMetaMaxContent is the max inner width (no cell pad) for each meta
 // column. Code stays flexible so the file dominates the pane.
 var blameMetaMaxContent = []int{
-	blameColLine:   4,  // up to 9999
-	blameColCommit: 7,  // short hash
-	blameColAge:    3,  // now / 2h / 3d / 2mo / 1y
+	blameColLine:   5, // mark + up to 9999
+	blameColCommit: 7, // short hash
+	blameColAge:    3, // now / 2h / 3d / 2mo / 1y
 	blameColAuthor: 10, // truncate long names
 }
 

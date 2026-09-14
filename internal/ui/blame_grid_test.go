@@ -16,7 +16,7 @@ func TestBlameRowCells(t *testing.T) {
 		Text: "\tfmt.Println()",
 	}
 	row := blameRow(bl)
-	if row[blameColLine] != "12" || row[blameColCommit] != "abc1234" {
+	if row[blameColLine] != " 12" || row[blameColCommit] != "abc1234" {
 		t.Fatalf("row = %#v", row)
 	}
 	if !strings.HasPrefix(row[blameColCode], "    ") {
@@ -58,6 +58,7 @@ func TestBlameGridHybridChrome(t *testing.T) {
 		NoStripe:            true,
 		SoftCursor:          true,
 		SkipCursorPaintCols: []int{blameColCode},
+		RightAlignCols:      []int{blameColLine},
 		MuteCols:            []int{blameColCommit, blameColAge, blameColAuthor},
 		CellStyle: func(row, col int, text string) (string, bool) {
 			switch col {
@@ -106,7 +107,7 @@ func TestBlameRowSuppressesRepeatedMeta(t *testing.T) {
 	if r1[blameColCommit] != "" || r1[blameColAge] != "" || r1[blameColAuthor] != "" {
 		t.Fatalf("same-commit row should blank meta: %#v", r1)
 	}
-	if r1[blameColLine] != "2" || r1[blameColCode] != "two" {
+	if r1[blameColLine] != " 2" || r1[blameColCode] != "two" {
 		t.Fatalf("line/code must remain: %#v", r1)
 	}
 	if r2[blameColCommit] != "bbb" || r2[blameColAuthor] != "bob" {
@@ -210,6 +211,25 @@ func TestBlameFoldKeysOnCode(t *testing.T) {
 	mm = next.(Model)
 	if mm.blameGutterFold != 0 {
 		t.Fatalf("h on code should unfold first: fold=%d", mm.blameGutterFold)
+	}
+}
+
+func TestBlameLineCursorMark(t *testing.T) {
+	if got := blameLineCell(12, false); got != " 12" {
+		t.Fatalf("inactive = %q", got)
+	}
+	if got := blameLineCell(12, true); got != blameCursorMark+"12" {
+		t.Fatalf("active = %q", got)
+	}
+}
+
+func TestPadCellRightAlign(t *testing.T) {
+	got := padCellAlign("12", 6, true)
+	if got != "   12 " {
+		t.Fatalf("right padCell = %q", got)
+	}
+	if got := padTrimRight("7", 4); got != "   7" {
+		t.Fatalf("padTrimRight = %q", got)
 	}
 }
 

@@ -1927,6 +1927,8 @@ func (m Model) renderBlamePane(width, height int) string {
 	rows := make([][]string, len(idx))
 	for i := range idx {
 		rows[i] = blameRowDisplay(m.blame, idx, i)
+		active := i == m.blameCursor && m.focus == FocusMain
+		rows[i][blameColLine] = blameLineCell(m.blame[idx[i]].Line, active)
 	}
 	newest, oldest := blameAgeRange(m.blame)
 	g := Grid{
@@ -1943,23 +1945,26 @@ func (m Model) renderBlamePane(width, height int) string {
 		NoStripe:            true,
 		SoftCursor:          true,
 		SkipCursorPaintCols: []int{blameColCode},
+		RightAlignCols:      []int{blameColLine},
 		MuteCols:            []int{blameColCommit, blameColAge, blameColAuthor},
 		HiddenCols:          blameHiddenCols(m.blameGutterFold),
 		HScrollCol:          blameColCode,
 		HScroll:             m.blameCodeScroll,
 		CellStyle: func(row, col int, text string) (string, bool) {
+			focused := row == m.blameCursor && m.focus == FocusMain
 			switch col {
 			case blameColLine:
-				// Match zen detail gutter line numbers.
+				// Zen gutter grey; active row uses slate so › reads clearly.
 				st := styleZenHunk
-				if row == m.blameCursor && m.focus == FocusMain {
-					st = st.Background(colorRowFocusBg)
+				if focused {
+					st = lipgloss.NewStyle().Foreground(colorPrimary)
 				}
 				return st.Render(text), true
 			case blameColCode:
 				if row < 0 || row >= len(idx) {
 					return "", false
 				}
+				// Age wash only — row identity is the › mark, not a code fill.
 				bl := m.blame[idx[row]]
 				return blameAgeStyle(bl.When, newest, oldest).Render(text), true
 			default:
