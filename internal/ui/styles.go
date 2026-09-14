@@ -16,8 +16,9 @@ var (
 	colorBorderUnfocused = lipgloss.Color("#afb8c1") // unfocused pane frame
 	colorBorder          = lipgloss.Color("#d0d7de") // inner grid lines
 	colorBg              = lipgloss.Color("#ffffff")
-	colorRowFocusBg      = lipgloss.Color("#eaeef2")
-	colorStripe          = lipgloss.Color("#fafbfc") // zebra row tint (subtle)
+	// Creel GitHub-light cursor-row / zebra — quiet washes, not near-white noise.
+	colorRowFocusBg = lipgloss.Color("#e4e5e5")
+	colorStripe     = lipgloss.Color("#f2f2f2")
 
 	styleTitle = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
 	styleMuted = lipgloss.NewStyle().Foreground(lipgloss.Color("#656d76"))
@@ -68,7 +69,7 @@ var (
 	styleHelpTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffffff")).Background(colorPrimary)
 	styleHelpSection = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
 	styleFilter      = lipgloss.NewStyle().Foreground(lipgloss.Color("#1f2328")).Background(lipgloss.Color("#fff8c5"))
-	// Soft row wash on focused blame / related rows.
+	// Soft row wash on focused grid rows (creel cursor-row), not the slate cell.
 	styleRowFocus = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#1f2328")).
 			Background(colorRowFocusBg)

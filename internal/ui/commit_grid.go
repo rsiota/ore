@@ -60,15 +60,22 @@ func commitGraphLines(commits []git.Commit, idx []int, sortDir SortDir) []string
 	return buildSoftGraph(commits, idx)
 }
 
-func styleCommitGraphCell(row, col int, text string) (string, bool) {
+func styleCommitGraphCell(row, col int, text string, focused bool) (string, bool) {
 	if col != commitColGraph {
 		return "", false
 	}
-	// Match zebra cell backgrounds (forced white was showing as a mismatch).
+	// Match zebra / cursor-row cell backgrounds (forced white mismatched).
+	bg := lipgloss.Color("")
 	stripe := row%2 == 1
+	switch {
+	case focused:
+		bg = colorRowFocusBg
+	case stripe:
+		bg = colorStripe
+	}
 	if strings.TrimSpace(text) == "" {
-		if stripe {
-			return styleStripe.Render(text), true
+		if bg != "" {
+			return lipgloss.NewStyle().Background(bg).Render(text), true
 		}
 		return text, true
 	}
@@ -77,11 +84,11 @@ func styleCommitGraphCell(row, col int, text string) (string, bool) {
 	b.Grow(len(runes) * 12)
 	for _, r := range runes {
 		st := lipgloss.NewStyle()
-		if stripe {
-			st = st.Background(colorStripe)
+		if bg != "" {
+			st = st.Background(bg)
 		}
 		if r == ' ' {
-			if stripe {
+			if bg != "" {
 				b.WriteString(st.Render(" "))
 			} else {
 				b.WriteByte(' ')

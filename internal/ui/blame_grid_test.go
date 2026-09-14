@@ -160,6 +160,18 @@ func TestDisplaySkipAndCodeScroll(t *testing.T) {
 	}
 }
 
+func TestBlameDefaultFoldShowsLineCommitCode(t *testing.T) {
+	hidden := blameHiddenCols(blameGutterFoldDefault)
+	if len(hidden) != 2 || hidden[0] != blameColAuthor || hidden[1] != blameColAge {
+		t.Fatalf("default fold should hide author+age, got %v", hidden)
+	}
+	if blameColIsHidden(blameGutterFoldDefault, blameColCommit) ||
+		blameColIsHidden(blameGutterFoldDefault, blameColLine) ||
+		blameColIsHidden(blameGutterFoldDefault, blameColCode) {
+		t.Fatal("default fold must keep line, commit, and code")
+	}
+}
+
 func TestBlameGutterFoldHidesMeta(t *testing.T) {
 	if got := blameHiddenCols(0); got != nil {
 		t.Fatalf("fold 0: %v", got)

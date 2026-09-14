@@ -75,7 +75,7 @@ type Model struct {
 	blameOffset      int
 	blameCol         int
 	blameCodeScroll  int // horizontal offset for long code lines
-	blameGutterFold  int // 0..3: hide author, then age, then commit
+	blameGutterFold  int // 0..3; default hides age+author (line/commit/code)
 	blameFilterCol   int
 	blameSortCol     int
 	blameSortDir     SortDir
@@ -320,7 +320,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.blameOffset = 0
 		m.blameCol = blameColCode
 		m.blameCodeScroll = 0
-		m.blameGutterFold = 0
+		m.blameGutterFold = blameGutterFoldDefault
 		m.blameSortCol = -1
 		m.blameSortDir = SortNone
 		if m.blamePreferLine > 0 {
@@ -779,7 +779,7 @@ func (m *Model) refreshStatus() {
 		if m.blameSortDir != SortNone && m.blameSortCol >= 0 && m.blameSortCol < len(blameColumns) {
 			m.status += fmt.Sprintf(" · sort %s%s", blameColumns[m.blameSortCol], m.blameSortDir.Arrow())
 		}
-		if m.blameGutterFold > 0 {
+		if m.blameGutterFold != blameGutterFoldDefault {
 			m.status += fmt.Sprintf(" · fold %d", m.blameGutterFold)
 		}
 		if m.blameCodeScroll > 0 {
@@ -1857,17 +1857,20 @@ func (m Model) renderCommitPane(width, height int) string {
 		rows[i] = commitRow(m.commits[src], graphs[i])
 	}
 	g := Grid{
-		Columns:   commitColumns,
-		Rows:      rows,
-		CursorRow: m.cursor,
-		CursorCol: m.commitCol,
-		OffsetRow: m.commitOffset,
-		SortCol:   m.commitSortCol,
-		SortDir:   m.commitSortDir,
-		Width:     width,
-		Height:    height,
-		Focused:   m.focus == FocusMain,
-		CellStyle: styleCommitGraphCell,
+		Columns:    commitColumns,
+		Rows:       rows,
+		CursorRow:  m.cursor,
+		CursorCol:  m.commitCol,
+		OffsetRow:  m.commitOffset,
+		SortCol:    m.commitSortCol,
+		SortDir:    m.commitSortDir,
+		Width:      width,
+		Height:     height,
+		Focused:    m.focus == FocusMain,
+		SoftCursor: true,
+		CellStyle: func(row, col int, text string) (string, bool) {
+			return styleCommitGraphCell(row, col, text, row == m.cursor && m.focus == FocusMain)
+		},
 	}
 	g.AutoWidths()
 	g.ClampCursor()
@@ -1881,16 +1884,17 @@ func (m Model) renderFilesPane(width, height int) string {
 		rows[i] = fileRow(m.files[src])
 	}
 	g := Grid{
-		Columns:   fileColumns,
-		Rows:      rows,
-		CursorRow: m.fileCursor,
-		CursorCol: m.fileCol,
-		OffsetRow: m.fileOffset,
-		SortCol:   m.fileSortCol,
-		SortDir:   m.fileSortDir,
-		Width:     width,
-		Height:    height,
-		Focused:   m.focus == FocusMain,
+		Columns:    fileColumns,
+		Rows:       rows,
+		CursorRow:  m.fileCursor,
+		CursorCol:  m.fileCol,
+		OffsetRow:  m.fileOffset,
+		SortCol:    m.fileSortCol,
+		SortDir:    m.fileSortDir,
+		Width:      width,
+		Height:     height,
+		Focused:    m.focus == FocusMain,
+		SoftCursor: true,
 	}
 	g.AutoWidths()
 	g.ClampCursor()
@@ -1905,17 +1909,20 @@ func (m Model) renderHistoryPane(width, height int) string {
 		rows[i] = commitRow(m.history[src], graphs[i])
 	}
 	g := Grid{
-		Columns:   commitColumns,
-		Rows:      rows,
-		CursorRow: m.historyCursor,
-		CursorCol: m.historyCol,
-		OffsetRow: m.historyOffset,
-		SortCol:   m.historySortCol,
-		SortDir:   m.historySortDir,
-		Width:     width,
-		Height:    height,
-		Focused:   m.focus == FocusMain,
-		CellStyle: styleCommitGraphCell,
+		Columns:    commitColumns,
+		Rows:       rows,
+		CursorRow:  m.historyCursor,
+		CursorCol:  m.historyCol,
+		OffsetRow:  m.historyOffset,
+		SortCol:    m.historySortCol,
+		SortDir:    m.historySortDir,
+		Width:      width,
+		Height:     height,
+		Focused:    m.focus == FocusMain,
+		SoftCursor: true,
+		CellStyle: func(row, col int, text string) (string, bool) {
+			return styleCommitGraphCell(row, col, text, row == m.historyCursor && m.focus == FocusMain)
+		},
 	}
 	g.AutoWidths()
 	g.ClampCursor()

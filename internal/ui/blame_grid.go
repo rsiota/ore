@@ -25,7 +25,10 @@ var blameColumns = []string{"line", "commit", "age", "author", "code"}
 // with l (author first, then age, then commit). Line and code always stay.
 var blameMetaFoldOrder = []int{blameColAuthor, blameColAge, blameColCommit}
 
-const blameGutterFoldMax = 3 // len(blameMetaFoldOrder)
+const (
+	blameGutterFoldMax     = 3 // len(blameMetaFoldOrder)
+	blameGutterFoldDefault = 2 // line + commit + code (age/author folded)
+)
 
 func blameHiddenCols(fold int) []int {
 	if fold < 0 {

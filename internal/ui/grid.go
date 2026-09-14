@@ -425,7 +425,10 @@ func (g Grid) renderRow(rowIdx int) string {
 		}
 	}
 	sep := g.colSep()
-	if stripe {
+	switch {
+	case cursorRow && g.SoftCursor:
+		sep = styleGridBorder.Background(colorRowFocusBg).Render("│")
+	case stripe:
 		sep = styleGridBorder.Background(colorStripe).Render("│")
 	}
 	return fitWidth(g.joinVisibleCols(parts, sep), g.Width)
