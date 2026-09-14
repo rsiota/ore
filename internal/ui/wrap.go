@@ -40,3 +40,18 @@ func wrapDisplay(s string, width int) []string {
 	}
 	return out
 }
+
+// displaySkip drops the first skip display columns from s.
+func displaySkip(s string, skip int) string {
+	if skip <= 0 || s == "" {
+		return s
+	}
+	w := 0
+	for i, r := range s {
+		if w >= skip {
+			return s[i:]
+		}
+		w += runewidth.RuneWidth(r)
+	}
+	return ""
+}

@@ -84,6 +84,7 @@ func registry() []Section {
 			Items: []Binding{
 				{"h/l · ←/→", []string{"h", "l", "left", "right"}, "previous / next column", "h/l"},
 				{"0 / $", []string{"0", "$"}, "first / last column", ""},
+				{"< / >", []string{"<", ">", ",", "."}, "scroll code left / right", "<>"},
 				{"o", []string{"o"}, "cycle sort on current column (asc→desc→off)", "o"},
 				{"/", []string{"/"}, "filter current column", "/"},
 				{"f / g f", []string{"f", "g"}, "follow line backward", "f"},

@@ -69,6 +69,9 @@ type Grid struct {
 	SkipCursorPaintCols []int
 	// MuteCols render muted when not otherwise styled (quiet blame gutter).
 	MuteCols []int
+	// HScrollCol / HScroll shift a column's content left for long cells (blame code).
+	HScrollCol int
+	HScroll    int
 	// CellStyle styles a non-cursor cell. ok=true replaces the default plain/stripe look.
 	CellStyle func(row, col int, text string) (styled string, ok bool)
 }
@@ -172,6 +175,13 @@ func (g *Grid) ensureVisible() {
 
 // AutoWidths sizes columns from headers and visible content, fitting into width.
 func (g *Grid) AutoWidths() {
+	g.AutoWidthsCaps(nil)
+}
+
+// AutoWidthsCaps is AutoWidths with per-column max content widths (excluding
+// cell padding) for every column except the last, which still flexes to fill.
+// A max of 0 (or a nil/short slice entry) keeps the default 16-rune cap.
+func (g *Grid) AutoWidthsCaps(maxContent []int) {
 	n := g.NumCols()
 	if n == 0 {
 		g.Widths = nil
@@ -190,11 +200,14 @@ func (g *Grid) AutoWidths() {
 			}
 		}
 	}
-	// Cap subject-like trailing column flex; cap others.
-	minCell := 4 + pad
+	minCell := 3 + pad
 	for i := 0; i < n-1; i++ {
-		if g.Widths[i] > 16+pad {
-			g.Widths[i] = 16 + pad
+		capContent := 16
+		if i < len(maxContent) && maxContent[i] > 0 {
+			capContent = maxContent[i]
+		}
+		if g.Widths[i] > capContent+pad {
+			g.Widths[i] = capContent + pad
 		}
 		if g.Widths[i] < minCell {
 			g.Widths[i] = minCell
@@ -305,7 +318,7 @@ func (g Grid) renderRow(rowIdx int) string {
 		if i < len(row) {
 			val = row[i]
 		}
-		text := padCell(val, g.widthAt(i))
+		text := g.padCellAt(val, i)
 		switch {
 		case cursorRow && i == g.CursorCol && !g.skipCursorPaint(i):
 			parts[i] = styleCursorCell.Render(text)
@@ -336,6 +349,28 @@ func (g Grid) renderRow(rowIdx int) string {
 		sep = styleGridBorder.Background(colorStripe).Render("│")
 	}
 	return fitWidth(joinCols(parts, sep), g.Width)
+}
+
+// padCellAt pads a cell, applying HScroll for HScrollCol when set.
+func (g Grid) padCellAt(s string, col int) string {
+	if g.HScroll > 0 && col == g.HScrollCol {
+		rest := displaySkip(s, g.HScroll)
+		inner := g.widthAt(col) - 2*cellPad
+		if inner < 1 {
+			return padCell(rest, g.widthAt(col))
+		}
+		// Leading ellipsis marks that content continues to the left.
+		marker := "…"
+		mw := runewidth.StringWidth(marker)
+		bodyW := inner - mw
+		if bodyW < 1 {
+			return padCell(rest, g.widthAt(col))
+		}
+		body := runewidth.Truncate(rest, bodyW, "…")
+		pad := strings.Repeat(" ", cellPad)
+		return pad + runewidth.FillRight(marker+body, inner) + pad
+	}
+	return padCell(s, g.widthAt(col))
 }
 
 // renderEmptyRow fills a viewport slot past the last data row. When striping

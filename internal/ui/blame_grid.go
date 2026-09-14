@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/rsiota/ore/internal/git"
 )
@@ -27,13 +28,42 @@ func blameCell(b git.BlameLine, col int) string {
 	case blameColCommit:
 		return b.ShortHash
 	case blameColAge:
-		return relativeAge(b.When)
+		return compactAge(b.When)
 	case blameColAuthor:
 		return b.Author
 	case blameColCode:
 		return strings.ReplaceAll(b.Text, "\t", "    ")
 	default:
 		return ""
+	}
+}
+
+// blameMetaMaxContent is the max inner width (no cell pad) for each meta
+// column. Code stays flexible so the file dominates the pane.
+var blameMetaMaxContent = []int{
+	blameColLine:   4,  // up to 9999
+	blameColCommit: 7,  // short hash
+	blameColAge:    3,  // now / 2h / 3d / 2mo / 1y
+	blameColAuthor: 10, // truncate long names
+}
+
+// compactAge is a short blame-gutter age (keeps meta columns narrow).
+func compactAge(t time.Time) string {
+	if t.IsZero() {
+		return "?"
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Hour:
+		return "now"
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	case d < 365*24*time.Hour:
+		return fmt.Sprintf("%dmo", int(d.Hours()/24/30))
+	default:
+		return fmt.Sprintf("%dy", int(d.Hours()/24/365))
 	}
 }
 
@@ -45,6 +75,26 @@ func blameRow(b git.BlameLine) []string {
 		blameCell(b, blameColAuthor),
 		blameCell(b, blameColCode),
 	}
+}
+
+// blameRowDisplay builds a row, blanking commit/age/author when the previous
+// visible line belongs to the same commit (quieter gutter, still sortable).
+func blameRowDisplay(lines []git.BlameLine, idx []int, row int) []string {
+	if row < 0 || row >= len(idx) {
+		return nil
+	}
+	out := blameRow(lines[idx[row]])
+	if row == 0 {
+		return out
+	}
+	prev := lines[idx[row-1]]
+	cur := lines[idx[row]]
+	if prev.Hash != "" && prev.Hash == cur.Hash {
+		out[blameColCommit] = ""
+		out[blameColAge] = ""
+		out[blameColAuthor] = ""
+	}
+	return out
 }
 
 func filterBlameIndicesCol(lines []git.BlameLine, query string, col int) []int {

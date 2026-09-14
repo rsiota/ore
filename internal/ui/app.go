@@ -74,6 +74,7 @@ type Model struct {
 	blameCursor     int
 	blameOffset     int
 	blameCol        int
+	blameCodeScroll int // horizontal offset for long code lines
 	blameFilterCol  int
 	blameSortCol    int
 	blameSortDir    SortDir
@@ -316,7 +317,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.blame = msg.lines
 		m.blameCursor = 0
 		m.blameOffset = 0
-		m.blameCol = 0
+		m.blameCol = blameColCode
+		m.blameCodeScroll = 0
 		m.blameSortCol = -1
 		m.blameSortDir = SortNone
 		if m.blamePreferLine > 0 {
@@ -333,7 +335,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.main = MainBlame
 		m.focus = FocusMain
 		m.chordG = false
-		m.status = fmt.Sprintf("blame · %s @ %s · %d lines · f follow · esc back",
+		m.status = fmt.Sprintf("blame · %s @ %s · %d lines · f follow · <> code · esc back",
 			m.blamePath, shortHash(m.blameRev), len(m.blame))
 		if len(m.blame) > 0 {
 			return m, m.reloadDetail()
@@ -775,6 +777,9 @@ func (m *Model) refreshStatus() {
 		if m.blameSortDir != SortNone && m.blameSortCol >= 0 && m.blameSortCol < len(blameColumns) {
 			m.status += fmt.Sprintf(" · sort %s%s", blameColumns[m.blameSortCol], m.blameSortDir.Arrow())
 		}
+		if m.blameCodeScroll > 0 {
+			m.status += fmt.Sprintf(" · code ›%d", m.blameCodeScroll)
+		}
 		if m.filter != "" {
 			col := ""
 			if m.blameFilterCol >= 0 && m.blameFilterCol < len(blameColumns) {
@@ -893,8 +898,10 @@ func (m Model) gotoMainTop() (tea.Model, tea.Cmd) {
 		if len(m.blameIndices()) == 0 {
 			return m, nil
 		}
+		prevHash := m.selectedHash()
 		m.blameCursor = 0
 		m.ensureBlameVisible()
+		return m, m.blameReloadIfCommitChanged(prevHash)
 	}
 	return m, m.reloadDetail()
 }
@@ -1206,6 +1213,16 @@ func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "$":
 		m.blameCol = blameColCount - 1
 		return m, nil
+	case "<", ",":
+		if m.blameCodeScroll > 0 {
+			m.blameCodeScroll = max(0, m.blameCodeScroll-4)
+			m.refreshStatus()
+		}
+		return m, nil
+	case ">", ".":
+		m.blameCodeScroll += 4
+		m.refreshStatus()
+		return m, nil
 	case "o":
 		if m.blameSortCol != m.blameCol {
 			m.blameSortCol = m.blameCol
@@ -1223,39 +1240,50 @@ func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if n == 0 {
 		return m, nil
 	}
+	prevHash := m.selectedHash()
 	switch key {
 	case "j", "down":
 		if m.blameCursor < n-1 {
 			m.blameCursor++
 			m.ensureBlameVisible()
-			return m, m.reloadDetail()
+			return m, m.blameReloadIfCommitChanged(prevHash)
 		}
 	case "k", "up":
 		if m.blameCursor > 0 {
 			m.blameCursor--
 			m.ensureBlameVisible()
-			return m, m.reloadDetail()
+			return m, m.blameReloadIfCommitChanged(prevHash)
 		}
 	case "home":
 		m.blameCursor = 0
 		m.ensureBlameVisible()
-		return m, m.reloadDetail()
+		return m, m.blameReloadIfCommitChanged(prevHash)
 	case "G", "end":
 		m.blameCursor = n - 1
 		m.ensureBlameVisible()
-		return m, m.reloadDetail()
+		return m, m.blameReloadIfCommitChanged(prevHash)
 	case "ctrl+d":
 		m.blameCursor = min(n-1, m.blameCursor+m.mainPage())
 		m.ensureBlameVisible()
-		return m, m.reloadDetail()
+		return m, m.blameReloadIfCommitChanged(prevHash)
 	case "ctrl+u":
 		m.blameCursor = max(0, m.blameCursor-m.mainPage())
 		m.ensureBlameVisible()
-		return m, m.reloadDetail()
+		return m, m.blameReloadIfCommitChanged(prevHash)
 	case "f":
 		return m.followBlameLine()
 	}
 	return m, nil
+}
+
+// blameReloadIfCommitChanged skips a detail fetch when the cursor stays on the
+// same blamed commit (line chrome updates from the live cursor).
+func (m *Model) blameReloadIfCommitChanged(prevHash string) tea.Cmd {
+	cur := m.selectedHash()
+	if prevHash != "" && cur != "" && hashMatch(prevHash, cur) {
+		return nil
+	}
+	return m.reloadDetail()
 }
 
 func (m Model) followBlameLine() (tea.Model, tea.Cmd) {
@@ -1872,8 +1900,8 @@ func (m Model) renderHistoryPane(width, height int) string {
 func (m Model) renderBlamePane(width, height int) string {
 	idx := m.blameIndices()
 	rows := make([][]string, len(idx))
-	for i, src := range idx {
-		rows[i] = blameRow(m.blame[src])
+	for i := range idx {
+		rows[i] = blameRowDisplay(m.blame, idx, i)
 	}
 	newest, oldest := blameAgeRange(m.blame)
 	g := Grid{
@@ -1891,6 +1919,8 @@ func (m Model) renderBlamePane(width, height int) string {
 		SoftCursor:          true,
 		SkipCursorPaintCols: []int{blameColCode},
 		MuteCols:            []int{blameColLine, blameColCommit, blameColAge, blameColAuthor},
+		HScrollCol:          blameColCode,
+		HScroll:             m.blameCodeScroll,
 		CellStyle: func(row, col int, text string) (string, bool) {
 			if col != blameColCode || row < 0 || row >= len(idx) {
 				return "", false
@@ -1899,7 +1929,7 @@ func (m Model) renderBlamePane(width, height int) string {
 			return blameAgeStyle(bl.When, newest, oldest).Render(text), true
 		},
 	}
-	g.AutoWidths()
+	g.AutoWidthsCaps(blameMetaMaxContent)
 	g.ClampCursor()
 	return g.View()
 }
