@@ -1943,16 +1943,28 @@ func (m Model) renderBlamePane(width, height int) string {
 		NoStripe:            true,
 		SoftCursor:          true,
 		SkipCursorPaintCols: []int{blameColCode},
-		MuteCols:            []int{blameColLine, blameColCommit, blameColAge, blameColAuthor},
+		MuteCols:            []int{blameColCommit, blameColAge, blameColAuthor},
 		HiddenCols:          blameHiddenCols(m.blameGutterFold),
 		HScrollCol:          blameColCode,
 		HScroll:             m.blameCodeScroll,
 		CellStyle: func(row, col int, text string) (string, bool) {
-			if col != blameColCode || row < 0 || row >= len(idx) {
+			switch col {
+			case blameColLine:
+				// Match zen detail gutter line numbers.
+				st := styleZenHunk
+				if row == m.blameCursor && m.focus == FocusMain {
+					st = st.Background(colorRowFocusBg)
+				}
+				return st.Render(text), true
+			case blameColCode:
+				if row < 0 || row >= len(idx) {
+					return "", false
+				}
+				bl := m.blame[idx[row]]
+				return blameAgeStyle(bl.When, newest, oldest).Render(text), true
+			default:
 				return "", false
 			}
-			bl := m.blame[idx[row]]
-			return blameAgeStyle(bl.When, newest, oldest).Render(text), true
 		},
 	}
 	g.AutoWidthsCaps(blameMetaMaxContent)
@@ -2002,13 +2014,15 @@ func blameAgeRange(lines []git.BlameLine) (newest, oldest time.Time) {
 }
 
 // Soft age washes for light terminals — newer = cooler mint, older = warmer parchment.
+// Foreground matches zen context code (styleMuted) so blame and the detail pane agree.
 func blameAgeStyle(when, newest, oldest time.Time) lipgloss.Style {
+	fg := lipgloss.Color("#656d76") // styleMuted
 	if when.IsZero() || newest.IsZero() || oldest.IsZero() || !newest.After(oldest) {
-		return lipgloss.NewStyle()
+		return lipgloss.NewStyle().Foreground(fg)
 	}
 	span := newest.Sub(oldest).Seconds()
 	if span <= 0 {
-		return lipgloss.NewStyle()
+		return lipgloss.NewStyle().Foreground(fg)
 	}
 	// 0 = newest, 1 = oldest
 	t := newest.Sub(when).Seconds() / span
@@ -2020,11 +2034,11 @@ func blameAgeStyle(when, newest, oldest time.Time) lipgloss.Style {
 	}
 	switch {
 	case t < 0.33:
-		return lipgloss.NewStyle().Background(lipgloss.Color("#eef6f0")).Foreground(lipgloss.Color("#24292f"))
+		return lipgloss.NewStyle().Background(lipgloss.Color("#eef6f0")).Foreground(fg)
 	case t < 0.66:
-		return lipgloss.NewStyle().Background(lipgloss.Color("#f6f1e7")).Foreground(lipgloss.Color("#24292f"))
+		return lipgloss.NewStyle().Background(lipgloss.Color("#f6f1e7")).Foreground(fg)
 	default:
-		return lipgloss.NewStyle().Background(lipgloss.Color("#f0e6e4")).Foreground(lipgloss.Color("#24292f"))
+		return lipgloss.NewStyle().Background(lipgloss.Color("#f0e6e4")).Foreground(fg)
 	}
 }
 

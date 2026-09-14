@@ -58,12 +58,16 @@ func TestBlameGridHybridChrome(t *testing.T) {
 		NoStripe:            true,
 		SoftCursor:          true,
 		SkipCursorPaintCols: []int{blameColCode},
-		MuteCols:            []int{blameColLine, blameColCommit, blameColAge, blameColAuthor},
+		MuteCols:            []int{blameColCommit, blameColAge, blameColAuthor},
 		CellStyle: func(row, col int, text string) (string, bool) {
-			if col != blameColCode {
+			switch col {
+			case blameColLine:
+				return styleZenHunk.Render(text), true
+			case blameColCode:
+				return blameAgeStyle(lines[row].When, newest, oldest).Render(text), true
+			default:
 				return "", false
 			}
-			return blameAgeStyle(lines[row].When, newest, oldest).Render(text), true
 		},
 	}
 	g.AutoWidthsCaps(blameMetaMaxContent)
