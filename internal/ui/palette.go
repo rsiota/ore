@@ -111,6 +111,7 @@ func sortPaletteItems(items []paletteItem) {
 // chordReplays maps binding Display → key sequence for g-chords / doubles.
 var chordReplays = map[string][]string{
 	"g r":     {"g", "r"},
+	"g b":     {"g", "b"},
 	"g g / G": {"g", "g"},
 	"f / g f": {"f"},
 }

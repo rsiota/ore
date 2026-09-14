@@ -105,11 +105,13 @@ type Model struct {
 	err                string
 	status             string
 
-	branch string
-	head   string
+	branch  string
+	head    string
+	viewRev string // read-only log tip; empty = worktree HEAD
 
-	help    HelpPanel
-	palette palette
+	help     HelpPanel
+	palette  palette
+	branches branchPicker
 
 	filterTyping bool
 	filter       string // applied / live query
@@ -171,17 +173,35 @@ type relationsLoadedMsg struct {
 	err    error
 }
 
-func loadCommitsCmd(repo *git.Repo) tea.Cmd {
+func loadCommitsCmd(repo *git.Repo, rev string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		commits, err := repo.CommitLog(ctx, git.LogOptions{})
+		commits, err := repo.CommitLog(ctx, git.LogOptions{Rev: rev})
+		tip := rev
+		if tip == "" {
+			tip = "HEAD"
+		}
 		return commitsLoadedMsg{
 			commits: commits,
 			branch:  repo.BranchName(ctx),
-			head:    repo.HeadShort(ctx),
+			head:    repo.RevShort(ctx, tip),
 			err:     err,
 		}
+	}
+}
+
+type branchesLoadedMsg struct {
+	refs []git.Ref
+	err  error
+}
+
+func loadBranchesCmd(repo *git.Repo) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		refs, err := repo.ListBranches(ctx)
+		return branchesLoadedMsg{refs: refs, err: err}
 	}
 }
 
@@ -229,7 +249,7 @@ func loadLineRelationsCmd(repo *git.Repo, path, rev string, line git.BlameLine) 
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	return loadCommitsCmd(m.repo)
+	return loadCommitsCmd(m.repo, m.viewRev)
 }
 
 // Update implements tea.Model.
@@ -364,6 +384,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "relationships · enter open · esc close"
 		return m, nil
 
+	case branchesLoadedMsg:
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.status = "error"
+			return m, nil
+		}
+		m.branches.Open(msg.refs, m.viewRev)
+		m.status = "branch · enter view · esc cancel"
+		return m, nil
+
+	case branchPickedMsg:
+		return m, m.applyViewRev(msg.ref)
+
 	case paletteExMsg:
 		if msg.typing {
 			m.beginEx()
@@ -405,6 +438,12 @@ func (m Model) selectedHash() string {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.branches.IsVisible() {
+		var cmd tea.Cmd
+		m.branches, cmd = m.branches.Update(msg)
+		return m, cmd
+	}
+
 	if m.palette.IsVisible() {
 		var cmd tea.Cmd
 		m.palette, cmd = m.palette.Update(msg)
@@ -439,6 +478,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "ctrl+p":
 		m.chordG = false
+		m.branches.Hide()
 		m.palette.Open()
 		m.status = "command palette"
 		return m, nil
@@ -848,6 +888,8 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch key {
 		case "r":
 			return m.openRelations()
+		case "b":
+			return m, m.openBranchPicker()
 		case "g", "home":
 			return m.gotoMainTop()
 		case "f":
@@ -859,9 +901,9 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key == "g" {
 		m.chordG = true
-		m.status = "g · g top · r relations"
+		m.status = "g · g top · b branch · r relations"
 		if m.main == MainBlame {
-			m.status = "g · g top · r relations · f follow"
+			m.status = "g · g top · b branch · r relations · f follow"
 		}
 		return m, nil
 	}
@@ -1370,7 +1412,66 @@ func (m *Model) refresh() tea.Cmd {
 	m.loading = true
 	m.err = ""
 	m.status = "refreshing…"
-	return loadCommitsCmd(m.repo)
+	return loadCommitsCmd(m.repo, m.viewRev)
+}
+
+// openBranchPicker loads refs then shows the fuzzy branch popup.
+func (m *Model) openBranchPicker() tea.Cmd {
+	m.chordG = false
+	m.palette.Hide()
+	m.err = ""
+	m.status = "loading branches…"
+	return loadBranchesCmd(m.repo)
+}
+
+// applyViewRev sets the read-only tip and reloads the commit log from MainCommits.
+func (m *Model) applyViewRev(ref git.Ref) tea.Cmd {
+	next := ""
+	if !ref.Current {
+		next = ref.Name
+	}
+	if next == m.viewRev && !m.loading {
+		m.refreshStatus()
+		return nil
+	}
+	m.viewRev = next
+	m.main = MainCommits
+	m.files = nil
+	m.filesCommitHash = ""
+	m.openFilesPending = false
+	m.history = nil
+	m.historyPath = ""
+	m.blame = nil
+	m.blamePath = ""
+	m.blameRev = ""
+	m.blamePreferLine = 0
+	if m.explorer.Opened() {
+		m.explorer.Close()
+	}
+	m.focus = FocusMain
+	m.filter = ""
+	m.filterTyping = false
+	m.refreshPreferHash = ""
+	m.loading = true
+	m.err = ""
+	if m.viewRev == "" {
+		m.status = "viewing HEAD…"
+	} else {
+		m.status = fmt.Sprintf("viewing %s…", m.viewRev)
+	}
+	return loadCommitsCmd(m.repo, m.viewRev)
+}
+
+// switchViewRev jumps to a named ref (or HEAD) without opening the picker.
+func (m *Model) switchViewRev(name string) tea.Cmd {
+	name = strings.TrimSpace(name)
+	if name == "" || strings.EqualFold(name, "HEAD") {
+		return m.applyViewRev(git.Ref{Current: true, Name: "HEAD"})
+	}
+	if name == m.branch {
+		return m.applyViewRev(git.Ref{Current: true, Name: name})
+	}
+	return m.applyViewRev(git.Ref{Name: name})
 }
 
 func (m Model) commitListHash() string {
@@ -1685,7 +1786,7 @@ func (m Model) View() string {
 	b.WriteString(m.renderStatus())
 	view := clampFrame(b.String(), m.height, m.width)
 
-	// Centered creel-style command palette popup over the workspace.
+	// Centered creel-style popups over the workspace.
 	if m.palette.IsVisible() {
 		pw, ph := palettePopupDim()
 		palPanel := m.palette.View(pw, ph)
@@ -1697,6 +1798,18 @@ func (m Model) View() string {
 			panelY = 0
 		}
 		view = placeOverlay(view, palPanel, panelX, panelY)
+	}
+	if m.branches.IsVisible() {
+		bw, bh := branchPopupDim()
+		brPanel := m.branches.View(bw, bh)
+		panelW := lipgloss.Width(brPanel)
+		panelH := lipgloss.Height(brPanel)
+		panelX := (m.width - panelW) / 2
+		panelY := (m.height - 1 - panelH) / 2
+		if panelY < 0 {
+			panelY = 0
+		}
+		view = placeOverlay(view, brPanel, panelX, panelY)
 	}
 	return view
 }
@@ -1720,7 +1833,10 @@ func (m Model) renderStatus() string {
 
 	repo := filepathBase(m.repo.Path)
 	midParts := []string{styleTitle.Render(repo)}
-	if m.branch != "" || m.head != "" {
+	switch {
+	case m.viewRev != "":
+		midParts = append(midParts, styleMuted.Render(fmt.Sprintf("view %s @ %s", m.viewRev, m.head)))
+	case m.branch != "" || m.head != "":
 		midParts = append(midParts, styleMuted.Render(fmt.Sprintf("%s @ %s", m.branch, m.head)))
 	}
 

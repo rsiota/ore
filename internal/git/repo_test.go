@@ -221,3 +221,83 @@ func gitTestRunner(t *testing.T, dir string) func(args ...string) {
 		}
 	}
 }
+
+func TestListBranches(t *testing.T) {
+	dir := t.TempDir()
+	run := gitTestRunner(t, dir)
+	run("init", "-b", "main")
+	run("config", "user.email", "ore@test")
+	run("config", "user.name", "ore-test")
+	path := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(path, []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "a.txt")
+	run("commit", "-m", "on main")
+	run("branch", "feature")
+	run("checkout", "-b", "other")
+	if err := os.WriteFile(path, []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "a.txt")
+	run("commit", "-m", "on other")
+	run("checkout", "main")
+
+	// Fake a remote-tracking ref without a network remote.
+	run("update-ref", "refs/remotes/origin/main", "HEAD")
+	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	refs, err := repo.ListBranches(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]Ref{}
+	for _, r := range refs {
+		byName[r.Name] = r
+	}
+	for _, name := range []string{"main", "feature", "other", "origin/main"} {
+		if _, ok := byName[name]; !ok {
+			t.Fatalf("missing %q in %+v", name, refs)
+		}
+	}
+	if _, ok := byName["origin/HEAD"]; ok {
+		t.Fatal("origin/HEAD should be skipped")
+	}
+	if !byName["main"].Current {
+		t.Fatal("main should be current")
+	}
+	if !byName["origin/main"].Remote {
+		t.Fatal("origin/main should be remote")
+	}
+	if byName["feature"].Remote {
+		t.Fatal("feature should be local")
+	}
+
+	// Locals before remotes.
+	sawRemote := false
+	for _, r := range refs {
+		if r.Remote {
+			sawRemote = true
+		} else if sawRemote {
+			t.Fatalf("local %q after remote", r.Name)
+		}
+	}
+
+	log, err := repo.CommitLog(ctx, LogOptions{Rev: "other", MaxCount: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(log) == 0 || log[0].Subject != "on other" {
+		t.Fatalf("log other = %+v", log)
+	}
+	if got := repo.RevShort(ctx, "other"); got == "" {
+		t.Fatal("RevShort other empty")
+	}
+}

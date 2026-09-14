@@ -40,6 +40,7 @@ func registry() []Section {
 			Items: []Binding{
 				{"j/k · ↑/↓", []string{"j", "k", "up", "down"}, "move row", "j/k"},
 				{"g g / G", []string{"g", "G"}, "top / bottom", "gg/G"},
+				{"g b", []string{"g", "b"}, "switch viewed branch (read-only)", "gb"},
 				{"g r", []string{"g", "r"}, "relationship explorer", "gr"},
 				{"ctrl+d / ctrl+u", []string{"ctrl+d", "ctrl+u"}, "page down / up", ""},
 				{"enter", []string{"enter"}, "open (commit→files→history; history→blame)", "enter"},
@@ -146,13 +147,13 @@ func statusHintList(main MainView, explorerOpen bool) []string {
 	}
 	switch main {
 	case MainCommits:
-		return append([]string{"j/k"}, append(hintsForSection("Commit grid"), "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Commit grid"), "gb", "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainFiles:
-		return append([]string{"j/k"}, append(hintsForSection("Files grid"), "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Files grid"), "gb", "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainHistory:
-		return append([]string{"j/k"}, append(hintsForSection("History grid"), "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("History grid"), "gb", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainBlame:
-		return append([]string{"j/k"}, append(hintsForSection("Blame"), "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Blame"), "gb", "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	default:
 		return []string{"j/k", "enter", "tab", "D", "w", "ctrl+p", "?", "esc", "q"}
 	}

@@ -400,7 +400,15 @@ func parseNumstat(out []byte) (files []FileChange, additions, deletions int) {
 
 // HeadShort returns the short HEAD hash, or empty if unavailable.
 func (r *Repo) HeadShort(ctx context.Context) string {
-	out, err := r.run(ctx, "rev-parse", "--short", "HEAD")
+	return r.RevShort(ctx, "HEAD")
+}
+
+// RevShort returns the short hash for rev, or empty if unavailable.
+func (r *Repo) RevShort(ctx context.Context, rev string) string {
+	if rev == "" {
+		rev = "HEAD"
+	}
+	out, err := r.run(ctx, "rev-parse", "--short", rev)
 	if err != nil {
 		return ""
 	}
@@ -418,4 +426,69 @@ func (r *Repo) BranchName(ctx context.Context) string {
 		return "DETACHED"
 	}
 	return name
+}
+
+// Ref is a local or remote branch tip (read-only view target).
+type Ref struct {
+	Name    string // short name: main, origin/feature
+	Hash    string // short object name
+	Subject string
+	Current bool   // worktree HEAD points here
+	Remote  bool   // refs/remotes/…
+}
+
+// ListBranches returns local then remote branches (newest tip first within each).
+func (r *Repo) ListBranches(ctx context.Context) ([]Ref, error) {
+	format := strings.Join([]string{
+		"%(refname)",
+		"%(refname:short)",
+		"%(objectname:short)",
+		"%(subject)",
+		"%(HEAD)",
+	}, fieldSep)
+	out, err := r.run(ctx, "for-each-ref",
+		"--sort=-committerdate",
+		"--format="+format,
+		"refs/heads",
+		"refs/remotes",
+	)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		local  []Ref
+		remote []Ref
+	)
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, fieldSep, 5)
+		if len(parts) < 4 {
+			continue
+		}
+		full, short, hash, subject := parts[0], parts[1], parts[2], parts[3]
+		headMark := ""
+		if len(parts) >= 5 {
+			headMark = parts[4]
+		}
+		ref := Ref{
+			Name:    short,
+			Hash:    hash,
+			Subject: subject,
+			Current: headMark == "*",
+			Remote:  strings.HasPrefix(full, "refs/remotes/"),
+		}
+		// Skip remote HEAD symbolic aliases (origin/HEAD).
+		if ref.Remote && (strings.HasSuffix(full, "/HEAD") || short == "origin/HEAD" || strings.HasSuffix(short, "/HEAD")) {
+			continue
+		}
+		if ref.Remote {
+			remote = append(remote, ref)
+		} else {
+			local = append(local, ref)
+		}
+	}
+	return append(local, remote...), nil
 }

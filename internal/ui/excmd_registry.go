@@ -42,6 +42,17 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"branch", "br"},
+			desc:  "view another branch tip (read-only; no checkout)",
+			usage: ":branch [name]",
+			run: func(m *Model, args []string) tea.Cmd {
+				if len(args) == 0 {
+					return m.openBranchPicker()
+				}
+				return m.switchViewRev(args[0])
+			},
+		},
+		{
 			verbs: []string{"refresh", "reload"},
 			desc:  "reload the commit log and current view",
 			usage: ":refresh",
