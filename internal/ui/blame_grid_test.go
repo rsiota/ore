@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/rsiota/ore/internal/git"
 )
 
@@ -151,6 +152,60 @@ func TestDisplaySkipAndCodeScroll(t *testing.T) {
 	row := g.renderRow(0)
 	if !strings.Contains(row, "…") {
 		t.Fatalf("scrolled code should show ellipsis: %q", row)
+	}
+}
+
+func TestBlameGutterFoldHidesMeta(t *testing.T) {
+	if got := blameHiddenCols(0); got != nil {
+		t.Fatalf("fold 0: %v", got)
+	}
+	if got := blameHiddenCols(1); len(got) != 1 || got[0] != blameColAuthor {
+		t.Fatalf("fold 1: %v", got)
+	}
+	if got := blameHiddenCols(3); len(got) != 3 {
+		t.Fatalf("fold 3: %v", got)
+	}
+	lines := []git.BlameLine{
+		{Line: 1, ShortHash: "abcdef1", Author: "alice", Text: "code here"},
+	}
+	g := Grid{
+		Columns:    blameColumns,
+		Rows:       [][]string{blameRow(lines[0])},
+		Width:      80,
+		Height:     5,
+		HiddenCols: blameHiddenCols(blameGutterFoldMax),
+	}
+	g.AutoWidthsCaps(blameMetaMaxContent)
+	if g.Widths[blameColAuthor] != 0 || g.Widths[blameColAge] != 0 || g.Widths[blameColCommit] != 0 {
+		t.Fatalf("hidden meta should be width 0: %v", g.Widths)
+	}
+	if g.Widths[blameColLine] == 0 || g.Widths[blameColCode] < 40 {
+		t.Fatalf("line+code should remain wide: %v", g.Widths)
+	}
+	view := g.View()
+	if strings.Contains(view, "author") || strings.Contains(view, "commit") {
+		t.Fatalf("folded view should omit meta headers: %q", view)
+	}
+	if !strings.Contains(view, "line") || !strings.Contains(view, "code") {
+		t.Fatalf("line/code headers should remain: %q", view)
+	}
+}
+
+func TestBlameFoldKeysOnCode(t *testing.T) {
+	m := Model{
+		main:     MainBlame,
+		blameCol: blameColCode,
+		blame:    []git.BlameLine{{Line: 1, Hash: "aaaaaaaa", Text: "x"}},
+	}
+	next, _ := m.handleBlameKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	mm := next.(Model)
+	if mm.blameGutterFold != 1 || mm.blameCol != blameColCode {
+		t.Fatalf("l on code should fold: fold=%d col=%d", mm.blameGutterFold, mm.blameCol)
+	}
+	next, _ = mm.handleBlameKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	mm = next.(Model)
+	if mm.blameGutterFold != 0 {
+		t.Fatalf("h on code should unfold first: fold=%d", mm.blameGutterFold)
 	}
 }
 

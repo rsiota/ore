@@ -71,17 +71,18 @@ type Model struct {
 	blame           []git.BlameLine
 	blamePath       string
 	blameRev        string
-	blameCursor     int
-	blameOffset     int
-	blameCol        int
-	blameCodeScroll int // horizontal offset for long code lines
-	blameFilterCol  int
-	blameSortCol    int
-	blameSortDir    SortDir
-	blameFrom       MainView // MainFiles or MainHistory
-	blamePreferLine int
-	loadingBlame    bool
-	chordG          bool // pending g-prefix for gg / gf in blame
+	blameCursor      int
+	blameOffset      int
+	blameCol         int
+	blameCodeScroll  int // horizontal offset for long code lines
+	blameGutterFold  int // 0..3: hide author, then age, then commit
+	blameFilterCol   int
+	blameSortCol     int
+	blameSortDir     SortDir
+	blameFrom        MainView // MainFiles or MainHistory
+	blamePreferLine  int
+	loadingBlame     bool
+	chordG           bool // pending g-prefix for gg / gf in blame
 
 	detail           *git.CommitDetail
 	detailFilterPath string // path requested by the in-flight / latest reloadDetail
@@ -319,6 +320,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.blameOffset = 0
 		m.blameCol = blameColCode
 		m.blameCodeScroll = 0
+		m.blameGutterFold = 0
 		m.blameSortCol = -1
 		m.blameSortDir = SortNone
 		if m.blamePreferLine > 0 {
@@ -335,7 +337,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.main = MainBlame
 		m.focus = FocusMain
 		m.chordG = false
-		m.status = fmt.Sprintf("blame · %s @ %s · %d lines · f follow · <> code · esc back",
+		m.status = fmt.Sprintf("blame · %s @ %s · %d lines · f follow · l fold · <> code · esc back",
 			m.blamePath, shortHash(m.blameRev), len(m.blame))
 		if len(m.blame) > 0 {
 			return m, m.reloadDetail()
@@ -777,6 +779,9 @@ func (m *Model) refreshStatus() {
 		if m.blameSortDir != SortNone && m.blameSortCol >= 0 && m.blameSortCol < len(blameColumns) {
 			m.status += fmt.Sprintf(" · sort %s%s", blameColumns[m.blameSortCol], m.blameSortDir.Arrow())
 		}
+		if m.blameGutterFold > 0 {
+			m.status += fmt.Sprintf(" · fold %d", m.blameGutterFold)
+		}
 		if m.blameCodeScroll > 0 {
 			m.status += fmt.Sprintf(" · code ›%d", m.blameCodeScroll)
 		}
@@ -1198,20 +1203,40 @@ func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	n := len(idx)
 	switch key {
 	case "h", "left":
-		if m.blameCol > 0 {
-			m.blameCol--
+		// On code, h restores folded meta before leaving the column.
+		if m.blameCol == blameColCode && m.blameGutterFold > 0 {
+			m.blameGutterFold--
+			m.refreshStatus()
+			return m, nil
+		}
+		for c := m.blameCol - 1; c >= 0; c-- {
+			if !blameColIsHidden(m.blameGutterFold, c) {
+				m.blameCol = c
+				break
+			}
 		}
 		return m, nil
 	case "l", "right":
-		if m.blameCol < blameColCount-1 {
-			m.blameCol++
+		// On code, l folds meta (author→age→commit) to widen code.
+		if m.blameCol == blameColCode {
+			if m.blameGutterFold < blameGutterFoldMax {
+				m.blameGutterFold++
+				m.refreshStatus()
+			}
+			return m, nil
+		}
+		for c := m.blameCol + 1; c < blameColCount; c++ {
+			if !blameColIsHidden(m.blameGutterFold, c) {
+				m.blameCol = c
+				break
+			}
 		}
 		return m, nil
 	case "0":
 		m.blameCol = 0
 		return m, nil
 	case "$":
-		m.blameCol = blameColCount - 1
+		m.blameCol = blameColCode
 		return m, nil
 	case "<", ",":
 		if m.blameCodeScroll > 0 {
@@ -1919,6 +1944,7 @@ func (m Model) renderBlamePane(width, height int) string {
 		SoftCursor:          true,
 		SkipCursorPaintCols: []int{blameColCode},
 		MuteCols:            []int{blameColLine, blameColCommit, blameColAge, blameColAuthor},
+		HiddenCols:          blameHiddenCols(m.blameGutterFold),
 		HScrollCol:          blameColCode,
 		HScroll:             m.blameCodeScroll,
 		CellStyle: func(row, col int, text string) (string, bool) {

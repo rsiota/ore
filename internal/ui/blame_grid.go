@@ -21,6 +21,34 @@ const (
 
 var blameColumns = []string{"line", "commit", "age", "author", "code"}
 
+// blameMetaFoldOrder is the order meta columns hide when folding from code
+// with l (author first, then age, then commit). Line and code always stay.
+var blameMetaFoldOrder = []int{blameColAuthor, blameColAge, blameColCommit}
+
+const blameGutterFoldMax = 3 // len(blameMetaFoldOrder)
+
+func blameHiddenCols(fold int) []int {
+	if fold < 0 {
+		fold = 0
+	}
+	if fold > len(blameMetaFoldOrder) {
+		fold = len(blameMetaFoldOrder)
+	}
+	if fold == 0 {
+		return nil
+	}
+	return append([]int(nil), blameMetaFoldOrder[:fold]...)
+}
+
+func blameColIsHidden(fold, col int) bool {
+	for _, c := range blameHiddenCols(fold) {
+		if c == col {
+			return true
+		}
+	}
+	return false
+}
+
 func blameCell(b git.BlameLine, col int) string {
 	switch col {
 	case blameColLine:

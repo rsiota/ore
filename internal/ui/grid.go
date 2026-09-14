@@ -72,6 +72,9 @@ type Grid struct {
 	// HScrollCol / HScroll shift a column's content left for long cells (blame code).
 	HScrollCol int
 	HScroll    int
+	// HiddenCols are omitted from layout (no width, no separator) so siblings
+	// can reclaim space — used by blame gutter fold.
+	HiddenCols []int
 	// CellStyle styles a non-cursor cell. ok=true replaces the default plain/stripe look.
 	CellStyle func(row, col int, text string) (styled string, ok bool)
 }
@@ -181,6 +184,7 @@ func (g *Grid) AutoWidths() {
 // AutoWidthsCaps is AutoWidths with per-column max content widths (excluding
 // cell padding) for every column except the last, which still flexes to fill.
 // A max of 0 (or a nil/short slice entry) keeps the default 16-rune cap.
+// HiddenCols get width 0 and are skipped in the fit math.
 func (g *Grid) AutoWidthsCaps(maxContent []int) {
 	n := g.NumCols()
 	if n == 0 {
@@ -190,10 +194,17 @@ func (g *Grid) AutoWidthsCaps(maxContent []int) {
 	pad := 2 * cellPad
 	g.Widths = make([]int, n)
 	for i, col := range g.Columns {
+		if g.colHidden(i) {
+			g.Widths[i] = 0
+			continue
+		}
 		g.Widths[i] = runewidth.StringWidth(col) + 1 + pad // room for sort arrow + pad
 	}
 	for _, row := range g.Rows {
 		for i := 0; i < n && i < len(row); i++ {
+			if g.colHidden(i) {
+				continue
+			}
 			w := runewidth.StringWidth(row[i]) + pad
 			if w > g.Widths[i] {
 				g.Widths[i] = w
@@ -201,7 +212,11 @@ func (g *Grid) AutoWidthsCaps(maxContent []int) {
 		}
 	}
 	minCell := 3 + pad
-	for i := 0; i < n-1; i++ {
+	flex := n - 1 // last column flexes (blame code / subject)
+	for i := 0; i < n; i++ {
+		if g.colHidden(i) || i == flex {
+			continue
+		}
 		capContent := 16
 		if i < len(maxContent) && maxContent[i] > 0 {
 			capContent = maxContent[i]
@@ -213,16 +228,48 @@ func (g *Grid) AutoWidthsCaps(maxContent []int) {
 			g.Widths[i] = minCell
 		}
 	}
-	// Fit into pane: give leftover to last column. Separators cost 1 col each.
-	used := n - 1 // │ between columns
-	for i := 0; i < n-1; i++ {
-		used += g.Widths[i]
+	visible := 0
+	used := 0
+	for i := 0; i < n; i++ {
+		if g.colHidden(i) {
+			continue
+		}
+		visible++
+		if i != flex {
+			used += g.Widths[i]
+		}
+	}
+	if visible > 1 {
+		used += visible - 1 // │ between visible columns
 	}
 	remain := g.Width - used
 	if remain < 8+pad {
 		remain = 8 + pad
 	}
-	g.Widths[n-1] = remain
+	if !g.colHidden(flex) {
+		g.Widths[flex] = remain
+	}
+}
+
+func (g Grid) colHidden(col int) bool {
+	for _, c := range g.HiddenCols {
+		if c == col {
+			return true
+		}
+	}
+	return false
+}
+
+// joinVisibleCols joins only non-hidden column parts with sep.
+func (g Grid) joinVisibleCols(parts []string, sep string) string {
+	var out []string
+	for i, p := range parts {
+		if g.colHidden(i) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return strings.Join(out, sep)
 }
 
 // View renders the grid into Width x Height cells.
@@ -260,6 +307,9 @@ func (g Grid) View() string {
 func (g Grid) renderHeader() string {
 	parts := make([]string, g.NumCols())
 	for i, name := range g.Columns {
+		if g.colHidden(i) {
+			continue
+		}
 		label := name
 		if i == g.SortCol {
 			if a := g.SortDir.Arrow(); a != "" {
@@ -268,7 +318,7 @@ func (g Grid) renderHeader() string {
 		}
 		parts[i] = renderHeaderCell(label, g.widthAt(i), g.Focused && i == g.CursorCol)
 	}
-	return fitWidth(joinCols(parts, g.colSep()), g.Width)
+	return fitWidth(g.joinVisibleCols(parts, g.colSep()), g.Width)
 }
 
 // renderHeaderCell draws a creel-style header: blue text, with underline
@@ -299,10 +349,15 @@ func renderHeaderCell(label string, totalWidth int, selected bool) string {
 func (g Grid) renderHeaderRule() string {
 	var b strings.Builder
 	sep := styleGridBorder.Render("┼")
+	first := true
 	for i := 0; i < g.NumCols(); i++ {
-		if i > 0 {
+		if g.colHidden(i) {
+			continue
+		}
+		if !first {
 			b.WriteString(sep)
 		}
+		first = false
 		b.WriteString(styleGridBorder.Render(strings.Repeat("─", g.widthAt(i))))
 	}
 	return fitWidth(b.String(), g.Width)
@@ -314,6 +369,9 @@ func (g Grid) renderRow(rowIdx int) string {
 	cursorRow := g.Focused && rowIdx == g.CursorRow
 	stripe := !g.NoStripe && rowIdx%2 == 1
 	for i := 0; i < g.NumCols(); i++ {
+		if g.colHidden(i) {
+			continue
+		}
 		val := ""
 		if i < len(row) {
 			val = row[i]
@@ -348,7 +406,7 @@ func (g Grid) renderRow(rowIdx int) string {
 	if stripe {
 		sep = styleGridBorder.Background(colorStripe).Render("│")
 	}
-	return fitWidth(joinCols(parts, sep), g.Width)
+	return fitWidth(g.joinVisibleCols(parts, sep), g.Width)
 }
 
 // padCellAt pads a cell, applying HScroll for HScrollCol when set.
@@ -379,6 +437,9 @@ func (g Grid) renderEmptyRow(rowIdx int) string {
 	stripe := !g.NoStripe && rowIdx%2 == 1
 	parts := make([]string, g.NumCols())
 	for i := 0; i < g.NumCols(); i++ {
+		if g.colHidden(i) {
+			continue
+		}
 		blank := strings.Repeat(" ", g.widthAt(i))
 		if stripe && !g.skipStripe(i) {
 			parts[i] = styleStripe.Render(blank)
@@ -390,7 +451,7 @@ func (g Grid) renderEmptyRow(rowIdx int) string {
 	if stripe {
 		sep = styleGridBorder.Background(colorStripe).Render("│")
 	}
-	return fitWidth(joinCols(parts, sep), g.Width)
+	return fitWidth(g.joinVisibleCols(parts, sep), g.Width)
 }
 
 func (g Grid) skipStripe(col int) bool {
