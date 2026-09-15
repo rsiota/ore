@@ -2287,7 +2287,7 @@ func (m Model) detailLinesUnified(d *git.CommitDetail) []string {
 	}
 	if diff := strings.TrimRight(d.Diff, "\n"); diff != "" {
 		out = append(out, pad(""))
-		for _, line := range strings.Split(diff, "\n") {
+		for _, line := range annotateUnifiedIntra(strings.Split(diff, "\n")) {
 			out = append(out, pad(line))
 		}
 	}
@@ -2331,12 +2331,12 @@ func renderDetailRows(line string, width int, wrap bool) []string {
 			return renderZenContext(num, text, width, wrap)
 		}
 	case strings.HasPrefix(line, zenAddPrefix):
-		if num, text, ok := parseZenNumText(strings.TrimPrefix(line, zenAddPrefix)); ok {
-			return renderZenChange(true, num, text, width, wrap)
+		if num, text, spans, ok := parseZenChangePayload(strings.TrimPrefix(line, zenAddPrefix)); ok {
+			return renderZenChange(true, num, text, spans, width, wrap)
 		}
 	case strings.HasPrefix(line, zenDelPrefix):
-		if num, text, ok := parseZenNumText(strings.TrimPrefix(line, zenDelPrefix)); ok {
-			return renderZenChange(false, num, text, width, wrap)
+		if num, text, spans, ok := parseZenChangePayload(strings.TrimPrefix(line, zenDelPrefix)); ok {
+			return renderZenChange(false, num, text, spans, width, wrap)
 		}
 	}
 	if strings.Contains(line, "\x1b[") {
@@ -2348,6 +2348,12 @@ func renderDetailRows(line string, width int, wrap bool) []string {
 		content = line[len(p):]
 	}
 	switch {
+	case strings.HasPrefix(content, intraAddPrefix):
+		text, spans := parseIntraPayload(strings.TrimPrefix(content, intraAddPrefix))
+		return renderIntraUnified(true, text, spans, width, wrap)
+	case strings.HasPrefix(content, intraDelPrefix):
+		text, spans := parseIntraPayload(strings.TrimPrefix(content, intraDelPrefix))
+		return renderIntraUnified(false, text, spans, width, wrap)
 	case isDiffFileHeader(content):
 		return renderWrappedCell(styleDiffMeta, content, width, wrap)
 	case strings.HasPrefix(content, "@@"):
@@ -2359,6 +2365,38 @@ func renderDetailRows(line string, width int, wrap bool) []string {
 	default:
 		return renderWrappedCell(lipgloss.NewStyle(), content, width, wrap)
 	}
+}
+
+func renderIntraUnified(add bool, text string, spans []byteSpan, width int, wrap bool) []string {
+	base, strong := styleDelWash, styleDelStrong
+	prefix := "-"
+	if add {
+		base, strong = styleAddWash, styleAddStrong
+		prefix = "+"
+	}
+	full := prefix + text
+	// Shift spans by 1 for the leading +/- marker.
+	shifted := make([]byteSpan, len(spans))
+	for i, sp := range spans {
+		shifted[i] = byteSpan{Start: sp.Start + 1, End: sp.End + 1}
+	}
+	pad := strings.Repeat(" ", cellPad)
+	bodyW := width - 2*cellPad
+	if bodyW < 1 {
+		bodyW = max(1, width-cellPad)
+	}
+	if !wrap {
+		return []string{fitWidth(pad+renderHighlightedCell(base, strong, full, shifted, bodyW), width)}
+	}
+	chunks := wrapDisplay(full, bodyW)
+	rows := make([]string, 0, len(chunks))
+	offset := 0
+	for _, c := range chunks {
+		chunkSpans := shiftSpans(shifted, offset, offset+len(c))
+		rows = append(rows, fitWidth(pad+renderHighlightedCell(base, strong, c, chunkSpans, bodyW), width))
+		offset += len(c)
+	}
+	return rows
 }
 
 // fitDetailInset keeps one cell of empty space on the right; left pad is

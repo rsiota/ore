@@ -30,6 +30,8 @@ type colorPalette struct {
 	del             lipgloss.Color
 	addWash         lipgloss.Color
 	delWash         lipgloss.Color
+	addStrong       lipgloss.Color // intra-line / word highlight on adds
+	delStrong       lipgloss.Color // intra-line / word highlight on deletes
 	zenHunk         lipgloss.Color
 	filterBg        lipgloss.Color
 	ageNew          lipgloss.Color
@@ -71,6 +73,8 @@ var (
 	styleDel        lipgloss.Style
 	styleAddWash    lipgloss.Style
 	styleDelWash    lipgloss.Style
+	styleAddStrong  lipgloss.Style
+	styleDelStrong  lipgloss.Style
 	styleDiffMeta   lipgloss.Style
 	styleDiffHunk   lipgloss.Style
 	styleZenHunk    lipgloss.Style
@@ -127,6 +131,8 @@ func applyPalette(p colorPalette) {
 	styleDel = lipgloss.NewStyle().Foreground(p.del)
 	styleAddWash = lipgloss.NewStyle().Foreground(p.add).Background(p.addWash)
 	styleDelWash = lipgloss.NewStyle().Foreground(p.del).Background(p.delWash)
+	styleAddStrong = lipgloss.NewStyle().Foreground(p.add).Background(p.addStrong)
+	styleDelStrong = lipgloss.NewStyle().Foreground(p.del).Background(p.delStrong)
 
 	styleDiffMeta = lipgloss.NewStyle().Foreground(p.muted)
 	styleDiffHunk = lipgloss.NewStyle().Foreground(p.label).Bold(true)

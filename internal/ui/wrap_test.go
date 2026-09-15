@@ -21,7 +21,7 @@ func TestWrapDisplay(t *testing.T) {
 
 func TestZenWrapContinuesGutter(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
-	rows := renderZenChange(true, 9, strings.Repeat("x", 40), 20, true)
+	rows := renderZenChange(true, 9, strings.Repeat("x", 40), nil, 20, true)
 	if len(rows) < 2 {
 		t.Fatalf("expected wrapped rows, got %d %#v", len(rows), rows)
 	}

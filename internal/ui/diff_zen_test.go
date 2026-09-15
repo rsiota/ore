@@ -29,7 +29,7 @@ func TestZenDiffLinesWithContext(t *testing.T) {
 		zenFileRuleMarker,
 		zenHunkPrefix + "@@ -10,4 +10,5 @@ func main() {",
 		zenCtxPrefix + "10" + zenFieldSep + "context",
-		zenDelPrefix + "11" + zenFieldSep + "old",
+		zenDelPrefix + "11" + zenFieldSep + "old", // may gain intra spans
 		zenAddPrefix + "11" + zenFieldSep + "new",
 		zenAddPrefix + "12" + zenFieldSep + "extra",
 		zenCtxPrefix + "13" + zenFieldSep + "more",
@@ -38,9 +38,10 @@ func TestZenDiffLinesWithContext(t *testing.T) {
 		t.Fatalf("len=%d want %d\n%#v", len(got), len(want), got)
 	}
 	for i, w := range want {
-		if got[i] != w {
-			t.Errorf("[%d] = %q, want %q", i, got[i], w)
+		if got[i] == w || strings.HasPrefix(got[i], w+zenFieldSep) {
+			continue
 		}
+		t.Errorf("[%d] = %q, want %q (or with intra spans)", i, got[i], w)
 	}
 }
 
@@ -113,7 +114,7 @@ func TestZenDiffSeparateHunkHeaders(t *testing.T) {
 
 func TestRenderZenChangeWidth(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
-	got := renderZenChange(true, 42, "hello world", 24, false)
+	got := renderZenChange(true, 42, "hello world", nil, 24, false)
 	if len(got) != 1 {
 		t.Fatalf("rows=%d", len(got))
 	}

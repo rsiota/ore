@@ -65,9 +65,10 @@ const (
 var hunkHeaderRe = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 
 type zenHunkLine struct {
-	kind byte // ' ', '+', '-'
-	num  int  // display line: old for del/ctx preference, new for add
-	text string
+	kind  byte // ' ', '+', '-'
+	num   int  // display line: old for del/ctx preference, new for add
+	text  string
+	spans []byteSpan // intra-line highlights for paired -/ + edits
 }
 
 // zenDiffLines turns a unified diff into Fork-like zen rows: file banners,
@@ -94,12 +95,13 @@ func zenDiffLines(diff string, context int) []string {
 		if hunkHeader != "" {
 			out = append(out, zenHunkPrefix+hunkHeader)
 		}
+		annotateZenIntraLine(hunkBody)
 		for _, row := range trimZenHunk(hunkBody, context) {
 			switch row.kind {
 			case '+':
-				out = append(out, zenAddPrefix+strconv.Itoa(row.num)+zenFieldSep+row.text)
+				out = append(out, encodeZenChange(true, row.num, row.text, row.spans))
 			case '-':
-				out = append(out, zenDelPrefix+strconv.Itoa(row.num)+zenFieldSep+row.text)
+				out = append(out, encodeZenChange(false, row.num, row.text, row.spans))
 			default:
 				out = append(out, zenCtxPrefix+strconv.Itoa(row.num)+zenFieldSep+row.text)
 			}
@@ -221,15 +223,36 @@ func pathFromDiffGit(line string) string {
 }
 
 func parseZenNumText(payload string) (num int, text string, ok bool) {
-	numStr, text, cut := strings.Cut(payload, zenFieldSep)
-	if !cut {
-		return 0, "", false
+	num, text, _, ok = parseZenChangePayload(payload)
+	return num, text, ok
+}
+
+func parseZenChangePayload(payload string) (num int, text string, spans []byteSpan, ok bool) {
+	parts := strings.SplitN(payload, zenFieldSep, 3)
+	if len(parts) < 2 {
+		return 0, "", nil, false
 	}
-	n, err := strconv.Atoi(numStr)
+	n, err := strconv.Atoi(parts[0])
 	if err != nil {
-		return 0, "", false
+		return 0, "", nil, false
 	}
-	return n, text, true
+	text = parts[1]
+	if len(parts) == 3 {
+		spans = parseByteSpans(parts[2])
+	}
+	return n, text, spans, true
+}
+
+func encodeZenChange(add bool, num int, text string, spans []byteSpan) string {
+	prefix := zenDelPrefix
+	if add {
+		prefix = zenAddPrefix
+	}
+	s := prefix + strconv.Itoa(num) + zenFieldSep + text
+	if len(spans) > 0 {
+		s += zenFieldSep + formatByteSpans(spans)
+	}
+	return s
 }
 
 func renderZenFile(path string, width int, wrap bool) []string {
@@ -289,32 +312,39 @@ func renderZenContext(num int, text string, width int, wrap bool) []string {
 	return renderZenCode(styleMuted, num, text, width, wrap)
 }
 
-func renderZenChange(add bool, num int, text string, width int, wrap bool) []string {
-	st := styleDelWash
+func renderZenChange(add bool, num int, text string, spans []byteSpan, width int, wrap bool) []string {
+	base, strong := styleDelWash, styleDelStrong
 	if add {
-		st = styleAddWash
+		base, strong = styleAddWash, styleAddStrong
 	}
-	return renderZenCode(st, num, text, width, wrap)
+	return renderZenCodeSegments(base, strong, num, text, spans, width, wrap)
 }
 
 func renderZenCode(st lipgloss.Style, num int, text string, width int, wrap bool) []string {
+	return renderZenCodeSegments(st, st, num, text, nil, width, wrap)
+}
+
+func renderZenCodeSegments(base, strong lipgloss.Style, num int, text string, spans []byteSpan, width int, wrap bool) []string {
 	gutter := zenGutter(num)
 	bodyW := width - lipgloss.Width(gutter) - cellPad
 	if bodyW < 1 {
 		bodyW = max(1, width-lipgloss.Width(gutter))
 	}
 	if !wrap {
-		return []string{fitWidth(gutter+cell(st, text, bodyW), width)}
+		return []string{fitWidth(gutter+renderHighlightedCell(base, strong, text, spans, bodyW), width)}
 	}
 	chunks := wrapDisplay(text, bodyW)
 	cont := zenGutterCont()
 	rows := make([]string, 0, len(chunks))
+	offset := 0
 	for i, c := range chunks {
 		g := gutter
 		if i > 0 {
 			g = cont
 		}
-		rows = append(rows, fitWidth(g+cell(st, c, bodyW), width))
+		chunkSpans := shiftSpans(spans, offset, offset+len(c))
+		rows = append(rows, fitWidth(g+renderHighlightedCell(base, strong, c, chunkSpans, bodyW), width))
+		offset += len(c)
 	}
 	return rows
 }
