@@ -16,6 +16,10 @@ type Config struct {
 	// Theme selects the colour palette (`light` or `dark`). Empty falls back
 	// to light at apply time.
 	Theme string `yaml:"theme,omitempty"`
+	// TransparentBackground leaves the app background unpainted so the
+	// terminal's own background / transparency shows through. Light themes
+	// can look wrong on a dark terminal profile when this is on.
+	TransparentBackground bool `yaml:"transparent_background,omitempty"`
 }
 
 // Dir returns ~/.config/ore (or $XDG_CONFIG_HOME/ore).

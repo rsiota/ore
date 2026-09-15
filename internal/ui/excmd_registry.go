@@ -61,6 +61,14 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"set"},
+			desc:  "change a setting (transparent_background)",
+			usage: ":set transparent_background [on|off]",
+			run: func(m *Model, args []string) tea.Cmd {
+				return m.exSet(args)
+			},
+		},
+		{
 			verbs: []string{"refresh", "reload"},
 			desc:  "reload the commit log and current view",
 			usage: ":refresh",

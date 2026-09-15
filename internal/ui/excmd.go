@@ -134,6 +134,58 @@ func (m *Model) exTheme(args []string) tea.Cmd {
 	return nil
 }
 
+func (m *Model) exSet(args []string) tea.Cmd {
+	if len(args) == 0 {
+		m.status = fmt.Sprintf("transparent_background=%s — :set transparent_background on|off", boolOnOff(m.transparentBg))
+		return nil
+	}
+	key := strings.ToLower(args[0])
+	switch key {
+	case "transparent_background", "transparent", "transparency":
+		if len(args) == 1 {
+			m.status = fmt.Sprintf("transparent_background=%s", boolOnOff(m.transparentBg))
+			return nil
+		}
+		on, ok := parseBoolSetting(args[1])
+		if !ok {
+			m.status = ":set transparent_background needs on or off"
+			return nil
+		}
+		m.transparentBg = on
+		if m.config == nil {
+			m.config = &config.Config{}
+		}
+		m.config.TransparentBackground = on
+		if err := m.config.Save(); err != nil {
+			m.status = fmt.Sprintf("transparent_background=%s (save failed: %v)", boolOnOff(on), err)
+			return nil
+		}
+		m.status = fmt.Sprintf("transparent_background=%s", boolOnOff(on))
+		return nil
+	default:
+		m.status = fmt.Sprintf("unknown setting %q (transparent_background)", args[0])
+		return nil
+	}
+}
+
+func boolOnOff(v bool) string {
+	if v {
+		return "on"
+	}
+	return "off"
+}
+
+func parseBoolSetting(s string) (val bool, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "on", "true", "1", "yes":
+		return true, true
+	case "off", "false", "0", "no":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
 func (m *Model) exGoto(args []string) tea.Cmd {
 	if len(args) == 0 {
 		m.status = ":goto needs a hash — :goto <hash>"

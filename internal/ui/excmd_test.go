@@ -59,7 +59,7 @@ func TestExGotoAmbiguous(t *testing.T) {
 func TestExCommandsListedInHelp(t *testing.T) {
 	h := HelpPanel{visible: true, width: 80, height: 40}
 	rows := strings.Join(h.rows(), "\n")
-	for _, want := range []string{":blame", ":history", ":goto", ":branch", ":theme", ":refresh", "Commands"} {
+	for _, want := range []string{":blame", ":history", ":goto", ":branch", ":theme", ":set", ":refresh", "Commands"} {
 		if !strings.Contains(rows, want) {
 			t.Fatalf("help missing %q", want)
 		}

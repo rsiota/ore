@@ -27,4 +27,4 @@ internal/version/  ldflags version string
 - Discoverability: `registry()` drives the `?` help overlay; `/` live-filters the current main grid.
 - Relationships: `g r` docks a right-pane explorer (parents/children/files, or blame-line neighbourhood). `Enter` jumps to a commit or file history.
 - Ex commands: `:` opens a vim-style prompt; `exCommands()` drives dispatch and the help Commands list (`:blame`, `:history`, `:goto`, `:theme`, …).
-- Themes: `light` (default) and `dark` palettes via `applyTheme`; `:theme` switches live and writes `theme:` to config. View paints theme `bg` so light stays readable on dark terminals.
+- Themes: `light` (default) and `dark` palettes via `applyTheme`; `:theme` switches live and writes `theme:` to config. View paints theme `bg` so light stays readable on dark terminals; `:set transparent_background on` skips that paint so the terminal’s own background / transparency shows through.

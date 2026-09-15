@@ -28,6 +28,7 @@ Commit grid is columnar (sort + column-scoped `/`). Ex commands (`:blame`, `:his
 | `:history <path>` | Path history with rename follow |
 | `:goto <hash>` | Jump to commit (prefix match) |
 | `:theme [light|dark]` | Switch colour theme (persisted) |
+| `:set transparent_background [on|off]` | Leave terminal background unpainted |
 | `:help` | Open help |
 | `:q` | Quit |
 

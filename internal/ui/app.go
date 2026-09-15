@@ -128,8 +128,9 @@ type Model struct {
 	// the current main view.
 	refreshPreferHash string
 
-	theme  string // active palette name (light|dark)
-	config *config.Config
+	theme          string // active palette name (light|dark)
+	transparentBg  bool   // skip theme bg paint (terminal transparency)
+	config         *config.Config
 }
 
 // New builds a model bound to repo. Call Init via the Bubble Tea program.
@@ -158,6 +159,7 @@ func New(repo *git.Repo) Model {
 		zenContext:     defaultZenContext,
 		detailCache:    &detailRenderCache{},
 		theme:          activeThemeName,
+		transparentBg:  cfg.TransparentBackground,
 		config:         cfg,
 	}
 }
