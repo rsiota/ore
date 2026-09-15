@@ -305,7 +305,7 @@ func renderPaletteItemLine(it paletteItem, keyW, descW, secW int, selected bool)
 			Render(full)
 	}
 	keyStr := lipgloss.NewStyle().Foreground(colorPrimary).Render(key)
-	descStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#1f2328")).Render(desc)
+	descStr := lipgloss.NewStyle().Foreground(colorFg).Render(desc)
 	secStr := styleMuted.Render(sec)
 	return prefix + keyStr + gap + descStr + gap + secStr
 }

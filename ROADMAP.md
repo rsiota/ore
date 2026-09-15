@@ -56,7 +56,7 @@ fluid as following foreign keys in creel.
 - [x] Extend grid widget to files / history / blame
 - [x] Command palette (`Ctrl+P`)
 - [x] Zen / unified detail diff (`D`)
-- [ ] Themes picker / dark variant
+- [x] Themes picker / dark variant (`:theme light|dark`, persisted)
 
 Files: `cmd/ore`, `internal/git`, `internal/ui`, `internal/config`, `internal/version`
 

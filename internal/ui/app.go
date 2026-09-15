@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/rsiota/ore/internal/config"
 	"github.com/rsiota/ore/internal/git"
 )
 
@@ -126,10 +127,22 @@ type Model struct {
 	// than the initial load: restore the commit cursor to this hash and keep
 	// the current main view.
 	refreshPreferHash string
+
+	theme  string // active palette name (light|dark)
+	config *config.Config
 }
 
 // New builds a model bound to repo. Call Init via the Bubble Tea program.
 func New(repo *git.Repo) Model {
+	cfg, _ := config.Load()
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+	theme := cfg.Theme
+	if theme == "" {
+		theme = defaultThemeName
+	}
+	applyTheme(theme)
 	return Model{
 		repo:           repo,
 		focus:          FocusMain,
@@ -144,6 +157,8 @@ func New(repo *git.Repo) Model {
 		diffMode:       DiffZen,
 		zenContext:     defaultZenContext,
 		detailCache:    &detailRenderCache{},
+		theme:          activeThemeName,
+		config:         cfg,
 	}
 }
 
@@ -1778,7 +1793,7 @@ func (m Model) View() string {
 		return "…"
 	}
 	if m.help.Visible() {
-		return m.help.View()
+		return m.paintBg(m.help.View())
 	}
 	var b strings.Builder
 	b.WriteString(m.renderBody())
@@ -1811,7 +1826,7 @@ func (m Model) View() string {
 		}
 		view = placeOverlay(view, brPanel, panelX, panelY)
 	}
-	return view
+	return m.paintBg(view)
 }
 
 func (m Model) renderStatus() string {
@@ -2141,10 +2156,10 @@ func blameAgeRange(lines []git.BlameLine) (newest, oldest time.Time) {
 	return newest, oldest
 }
 
-// Soft age washes for light terminals — newer = cooler mint, older = warmer parchment.
+// Soft age washes — newer = cooler mint, older = warmer parchment (theme-tuned).
 // Foreground matches zen context code (styleMuted) so blame and the detail pane agree.
 func blameAgeStyle(when, newest, oldest time.Time) lipgloss.Style {
-	fg := lipgloss.Color("#656d76") // styleMuted
+	fg := colorMuted
 	if when.IsZero() || newest.IsZero() || oldest.IsZero() || !newest.After(oldest) {
 		return lipgloss.NewStyle().Foreground(fg)
 	}
@@ -2162,11 +2177,11 @@ func blameAgeStyle(when, newest, oldest time.Time) lipgloss.Style {
 	}
 	switch {
 	case t < 0.33:
-		return lipgloss.NewStyle().Background(lipgloss.Color("#eef6f0")).Foreground(fg)
+		return lipgloss.NewStyle().Background(colorAgeNewBg).Foreground(fg)
 	case t < 0.66:
-		return lipgloss.NewStyle().Background(lipgloss.Color("#f6f1e7")).Foreground(fg)
+		return lipgloss.NewStyle().Background(colorAgeMidBg).Foreground(fg)
 	default:
-		return lipgloss.NewStyle().Background(lipgloss.Color("#f0e6e4")).Foreground(fg)
+		return lipgloss.NewStyle().Background(colorAgeOldBg).Foreground(fg)
 	}
 }
 

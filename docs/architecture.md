@@ -5,7 +5,7 @@
 - **Go 1.26+**
 - **TUI**: [Bubble Tea](https://github.com/charmbracelet/bubbletea) + [Lipgloss](https://github.com/charmbracelet/lipgloss)
 - **Git**: system `git` CLI via `os/exec` (correct blame / `--follow` / rename detection)
-- **Config**: `~/.config/ore/` (Wave 0: directory only)
+- **Config**: `~/.config/ore/config.yaml` (theme; more settings later)
 
 ## Layout
 
@@ -26,4 +26,5 @@ internal/version/  ldflags version string
 - Commit grid: shared `Grid` widget — cell cursor (`h`/`l`), `o` cycles sort on the focused column, `/` filters that column (frozen until cleared).
 - Discoverability: `registry()` drives the `?` help overlay; `/` live-filters the current main grid.
 - Relationships: `g r` docks a right-pane explorer (parents/children/files, or blame-line neighbourhood). `Enter` jumps to a commit or file history.
-- Ex commands: `:` opens a vim-style prompt; `exCommands()` drives dispatch and the help Commands list (`:blame`, `:history`, `:goto`, …).
+- Ex commands: `:` opens a vim-style prompt; `exCommands()` drives dispatch and the help Commands list (`:blame`, `:history`, `:goto`, `:theme`, …).
+- Themes: `light` (default) and `dark` palettes via `applyTheme`; `:theme` switches live and writes `theme:` to config. View paints theme `bg` so light stays readable on dark terminals.

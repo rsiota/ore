@@ -2,7 +2,6 @@ package ui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Light / GitHub-light chrome — readable on pale terminal themes.
 // Selection chrome is neutral slate so semantic colours (diff, age, hash) stand out.
 const borderOverhead = 2
 
@@ -10,67 +9,134 @@ func panelBorder() lipgloss.Border {
 	return lipgloss.NormalBorder()
 }
 
+// colorPalette is every colour a theme provides. Package styles are rebuilt
+// from it via applyPalette so :theme switches live without per-widget wiring.
+type colorPalette struct {
+	primary         lipgloss.Color
+	fg              lipgloss.Color
+	muted           lipgloss.Color
+	label           lipgloss.Color
+	border          lipgloss.Color
+	borderFocused   lipgloss.Color
+	borderUnfocused lipgloss.Color
+	bg              lipgloss.Color
+	cursorRow       lipgloss.Color
+	stripe          lipgloss.Color
+	err             lipgloss.Color
+	hash            lipgloss.Color
+	graphLine       lipgloss.Color
+	graphNode       lipgloss.Color
+	add             lipgloss.Color
+	del             lipgloss.Color
+	addWash         lipgloss.Color
+	delWash         lipgloss.Color
+	zenHunk         lipgloss.Color
+	filterBg        lipgloss.Color
+	ageNew          lipgloss.Color
+	ageMid          lipgloss.Color
+	ageOld          lipgloss.Color
+}
+
+// Colour slots — assigned by applyPalette (init + theme switch).
 var (
-	colorPrimary         = lipgloss.Color("#24292f") // slate fill (cursor cell, tabs)
-	colorBorderFocused   = lipgloss.Color("#6e7781") // focused pane frame
-	colorBorderUnfocused = lipgloss.Color("#afb8c1") // unfocused pane frame
-	colorBorder          = lipgloss.Color("#d0d7de") // inner grid lines
-	colorBg              = lipgloss.Color("#ffffff")
-	// Creel GitHub-light cursor-row / zebra — quiet washes, not near-white noise.
-	colorRowFocusBg = lipgloss.Color("#e4e5e5")
-	colorStripe     = lipgloss.Color("#f2f2f2")
+	colorPrimary         lipgloss.Color
+	colorFg              lipgloss.Color
+	colorMuted           lipgloss.Color
+	colorBorderFocused   lipgloss.Color
+	colorBorderUnfocused lipgloss.Color
+	colorBorder          lipgloss.Color
+	colorBg              lipgloss.Color
+	colorRowFocusBg      lipgloss.Color
+	colorStripe          lipgloss.Color
+	colorAgeNewBg        lipgloss.Color
+	colorAgeMidBg        lipgloss.Color
+	colorAgeOldBg        lipgloss.Color
+
+	graphLineColor lipgloss.Color
+	graphNodeColor lipgloss.Color
+
+	styleTitle      lipgloss.Style
+	styleMuted      lipgloss.Style
+	styleCell       lipgloss.Style // default grid body — explicit fg so paintBg stays readable
+	styleFocus      lipgloss.Style
+	styleCursorCell lipgloss.Style
+	styleSelected   lipgloss.Style
+	styleHeader     lipgloss.Style
+	styleGridHeader lipgloss.Style
+	styleGridBorder lipgloss.Style
+	styleStripe     lipgloss.Style
+	styleErr        lipgloss.Style
+	styleHash       lipgloss.Style
+	styleAdd        lipgloss.Style
+	styleDel        lipgloss.Style
+	styleAddWash    lipgloss.Style
+	styleDelWash    lipgloss.Style
+	styleDiffMeta   lipgloss.Style
+	styleDiffHunk   lipgloss.Style
+	styleZenHunk    lipgloss.Style
+	styleZenFile    lipgloss.Style
+	styleHelpTitle  lipgloss.Style
+	styleHelpSection lipgloss.Style
+	styleFilter     lipgloss.Style
+	styleRowFocus   lipgloss.Style
+)
+
+func init() {
+	applyTheme(defaultThemeName)
+}
+
+func applyPalette(p colorPalette) {
+	colorPrimary = p.primary
+	colorFg = p.fg
+	colorMuted = p.muted
+	colorBorderFocused = p.borderFocused
+	colorBorderUnfocused = p.borderUnfocused
+	colorBorder = p.border
+	colorBg = p.bg
+	colorRowFocusBg = p.cursorRow
+	colorStripe = p.stripe
+	colorAgeNewBg = p.ageNew
+	colorAgeMidBg = p.ageMid
+	colorAgeOldBg = p.ageOld
+	graphLineColor = p.graphLine
+	graphNodeColor = p.graphNode
 
 	styleTitle = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
-	styleMuted = lipgloss.NewStyle().Foreground(lipgloss.Color("#656d76"))
-	// List / soft focus wash (explorer selection) — neutral, not accent blue.
+	styleMuted = lipgloss.NewStyle().Foreground(p.muted)
+	styleCell = lipgloss.NewStyle().Foreground(p.fg)
 	styleFocus = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#1f2328")).
-			Background(colorRowFocusBg)
-	// Grid cursor cell — white text on slate.
+		Foreground(p.fg).
+		Background(p.cursorRow)
 	styleCursorCell = lipgloss.NewStyle().
-			Foreground(colorBg).
-			Background(colorPrimary)
-	// Pane / status tab when focused — slate pill, white text.
+		Foreground(p.bg).
+		Background(p.primary)
 	styleSelected = lipgloss.NewStyle().
-			Foreground(colorBg).
-			Background(colorPrimary).
-			Padding(0, 1)
-	styleHeader = lipgloss.NewStyle().Foreground(lipgloss.Color("#656d76")).Bold(true)
-	// Grid column headers — slate, bold; selected col underlines the word only.
-	styleGridHeader = lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
-	styleGridBorder = lipgloss.NewStyle().Foreground(colorBorder)
-	styleStripe     = lipgloss.NewStyle().Background(colorStripe)
-	styleErr        = lipgloss.NewStyle().Foreground(lipgloss.Color("#cf222e"))
-	styleHash       = lipgloss.NewStyle().Foreground(lipgloss.Color("#0550ae"))
+		Foreground(p.bg).
+		Background(p.primary).
+		Padding(0, 1)
+	styleHeader = lipgloss.NewStyle().Foreground(p.muted).Bold(true)
+	styleGridHeader = lipgloss.NewStyle().Foreground(p.primary).Bold(true)
+	styleGridBorder = lipgloss.NewStyle().Foreground(p.border)
+	// Stripe must set fg too — background alone leaves terminal-default text,
+	// which reads as dark-on-dark after paintBg on a light terminal profile.
+	styleStripe = lipgloss.NewStyle().Foreground(p.fg).Background(p.stripe)
+	styleErr = lipgloss.NewStyle().Foreground(p.err)
+	styleHash = lipgloss.NewStyle().Foreground(p.hash)
 
-	// Single-colour graph: solid lines, dots a touch lighter (terminal “opacity”).
-	graphLineColor = lipgloss.Color("#6e7781")
-	graphNodeColor = lipgloss.Color("#afb8c1")
+	styleAdd = lipgloss.NewStyle().Foreground(p.add)
+	styleDel = lipgloss.NewStyle().Foreground(p.del)
+	styleAddWash = lipgloss.NewStyle().Foreground(p.add).Background(p.addWash)
+	styleDelWash = lipgloss.NewStyle().Foreground(p.del).Background(p.delWash)
 
-	styleAdd = lipgloss.NewStyle().Foreground(lipgloss.Color("#1a7f37"))
-	styleDel = lipgloss.NewStyle().Foreground(lipgloss.Color("#cf222e"))
+	styleDiffMeta = lipgloss.NewStyle().Foreground(p.muted)
+	styleDiffHunk = lipgloss.NewStyle().Foreground(p.label).Bold(true)
+	styleZenHunk = lipgloss.NewStyle().Foreground(p.zenHunk)
+	styleZenFile = lipgloss.NewStyle().Foreground(p.primary)
 
-	styleAddWash = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#1a7f37")).
-			Background(lipgloss.Color("#dafbe1"))
-	styleDelWash = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#cf222e")).
-			Background(lipgloss.Color("#ffebe9"))
-
-	// Detail pane hierarchy: meta muted, subject bold, hunk headers labelled.
-	styleDiffMeta = lipgloss.NewStyle().Foreground(lipgloss.Color("#656d76"))
-	styleDiffHunk = lipgloss.NewStyle().Foreground(lipgloss.Color("#57606a")).Bold(true)
-	// Zen hunk banner — barely-there so @@ noise stays out of the way.
-	styleZenHunk = lipgloss.NewStyle().Foreground(lipgloss.Color("#afb8c1"))
-	// Zen file path — same slate as the subject, but not bold so the commit
-	// message stays the single heavyweight line.
-	styleZenFile = lipgloss.NewStyle().Foreground(colorPrimary)
-
-	styleHelpTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffffff")).Background(colorPrimary)
-	styleHelpSection = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
-	styleFilter      = lipgloss.NewStyle().Foreground(lipgloss.Color("#1f2328")).Background(lipgloss.Color("#fff8c5"))
-	// Soft row wash on focused grid rows (creel cursor-row), not the slate cell.
+	styleHelpTitle = lipgloss.NewStyle().Bold(true).Foreground(p.bg).Background(p.primary)
+	styleHelpSection = lipgloss.NewStyle().Bold(true).Foreground(p.primary)
+	styleFilter = lipgloss.NewStyle().Foreground(p.fg).Background(p.filterBg)
 	styleRowFocus = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#1f2328")).
-			Background(colorRowFocusBg)
-)
+		Foreground(p.fg).
+		Background(p.cursorRow)
+}

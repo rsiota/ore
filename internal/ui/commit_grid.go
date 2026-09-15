@@ -64,7 +64,8 @@ func styleCommitGraphCell(row, col int, text string, focused bool) (string, bool
 	if col != commitColGraph {
 		return "", false
 	}
-	// Match zebra / cursor-row cell backgrounds (forced white mismatched).
+	// Match zebra / cursor-row cell backgrounds; keep theme fg so paintBg
+	// doesn't leave terminal-default (often dark) text on a dark wash.
 	bg := lipgloss.Color("")
 	stripe := row%2 == 1
 	switch {
@@ -74,25 +75,22 @@ func styleCommitGraphCell(row, col int, text string, focused bool) (string, bool
 		bg = colorStripe
 	}
 	if strings.TrimSpace(text) == "" {
+		st := lipgloss.NewStyle().Foreground(colorFg)
 		if bg != "" {
-			return lipgloss.NewStyle().Background(bg).Render(text), true
+			st = st.Background(bg)
 		}
-		return text, true
+		return st.Render(text), true
 	}
 	runes := []rune(text)
 	var b strings.Builder
 	b.Grow(len(runes) * 12)
 	for _, r := range runes {
-		st := lipgloss.NewStyle()
+		st := lipgloss.NewStyle().Foreground(colorFg)
 		if bg != "" {
 			st = st.Background(bg)
 		}
 		if r == ' ' {
-			if bg != "" {
-				b.WriteString(st.Render(" "))
-			} else {
-				b.WriteByte(' ')
-			}
+			b.WriteString(st.Render(" "))
 			continue
 		}
 		if r == '●' {

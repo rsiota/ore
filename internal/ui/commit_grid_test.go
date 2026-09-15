@@ -158,3 +158,28 @@ func TestGridZebraFillsViewport(t *testing.T) {
 		t.Fatal("empty row should span grid width")
 	}
 }
+
+func TestGridBodyCellsSetThemeForeground(t *testing.T) {
+	// Unstyled cells used to inherit the terminal default FG, which is
+	// unreadable after dark paintBg on a light terminal profile.
+	defer applyTheme(defaultThemeName)
+	applyTheme("dark")
+
+	g := Grid{
+		Columns: []string{"hash", "subject"},
+		Rows:    [][]string{{"abc1234", "Fix contrast"}, {"def5678", "Another"}},
+		Width:   50,
+		Height:  8,
+		Focused: true,
+	}
+	g.AutoWidths()
+
+	even := g.renderRow(0) // non-stripe body
+	if !strings.Contains(even, "38;2;") {
+		t.Fatalf("even row should set theme fg: %q", even)
+	}
+	odd := g.renderRow(1) // stripe body
+	if !strings.Contains(odd, "38;2;") || !strings.Contains(odd, "48;2;") {
+		t.Fatalf("stripe row should set theme fg+bg: %q", odd)
+	}
+}

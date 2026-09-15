@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/rsiota/ore/internal/config"
 )
 
 func (m *Model) beginEx() {
@@ -106,6 +107,31 @@ func (m *Model) exHistory(args []string) tea.Cmd {
 	m.focus = FocusMain
 	m.status = fmt.Sprintf("loading history · %s", path)
 	return loadHistoryCmd(m.repo, path)
+}
+
+func (m *Model) exTheme(args []string) tea.Cmd {
+	if len(args) == 0 {
+		m.status = fmt.Sprintf("theme %s — :theme light|dark", m.theme)
+		return nil
+	}
+	resolved, ok := resolveThemeName(args[0])
+	if !ok {
+		m.status = fmt.Sprintf("unknown theme %q (light, dark)", args[0])
+		return nil
+	}
+	applyTheme(resolved)
+	m.theme = resolved
+	m.invalidateDetailCache()
+	if m.config == nil {
+		m.config = &config.Config{}
+	}
+	m.config.Theme = resolved
+	if err := m.config.Save(); err != nil {
+		m.status = fmt.Sprintf("theme %s (save failed: %v)", resolved, err)
+		return nil
+	}
+	m.status = "theme " + resolved
+	return nil
 }
 
 func (m *Model) exGoto(args []string) tea.Cmd {

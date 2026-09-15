@@ -27,6 +27,7 @@ Commit grid is columnar (sort + column-scoped `/`). Ex commands (`:blame`, `:his
 | `:blame <path> [rev]` | Open blame (rev defaults to selection / HEAD) |
 | `:history <path>` | Path history with rename follow |
 | `:goto <hash>` | Jump to commit (prefix match) |
+| `:theme [light|dark]` | Switch colour theme (persisted) |
 | `:help` | Open help |
 | `:q` | Quit |
 

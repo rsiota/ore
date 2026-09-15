@@ -420,7 +420,9 @@ func (g Grid) renderRow(rowIdx int) string {
 			case stripe && !g.skipStripe(i):
 				parts[i] = styleStripe.Render(text)
 			default:
-				parts[i] = text
+				// Always set theme fg — bare text inherits the terminal default,
+				// which is unreadable once paintBg applies a dark theme bg.
+				parts[i] = styleCell.Render(text)
 			}
 		}
 	}

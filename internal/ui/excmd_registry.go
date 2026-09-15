@@ -53,6 +53,14 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"theme"},
+			desc:  "switch colour theme (light or dark)",
+			usage: ":theme [light|dark]",
+			run: func(m *Model, args []string) tea.Cmd {
+				return m.exTheme(args)
+			},
+		},
+		{
 			verbs: []string{"refresh", "reload"},
 			desc:  "reload the commit log and current view",
 			usage: ":refresh",
