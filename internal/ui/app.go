@@ -1855,7 +1855,10 @@ func (m Model) renderStatus() string {
 		midParts = append(midParts, styleMuted.Render(fmt.Sprintf("%s @ %s", m.branch, m.head)))
 	}
 
-	busy := m.loading || m.loadingHistory || m.loadingBlame || m.loadingRel || m.loadingDetail
+	// Detail reloads on every j/k; treating them as "busy" hides the right-hand
+	// key hints and makes the status bar flicker. Keep hints stable — the detail
+	// pane already holds the previous patch until the new one is ready.
+	busy := m.loading || m.loadingHistory || m.loadingBlame || m.loadingRel
 
 	var hints string
 	switch {
@@ -1867,6 +1870,10 @@ func (m Model) renderStatus() string {
 		if m.status != "" {
 			midParts = append(midParts, styleMuted.Render(m.status))
 		}
+	}
+	// Always show contextual hints when there is room (including during detail
+	// fetches and error states), so the right corner stays visually stable.
+	if m.err == "" {
 		hints = styleMuted.Render(statusHints(m.main, m.explorer.Opened()))
 	}
 
