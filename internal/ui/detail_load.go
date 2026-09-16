@@ -218,6 +218,9 @@ func (m *Model) handleDetailHeader(msg detailHeaderMsg) (tea.Model, tea.Cmd) {
 	if m.openFilesPending && m.main == MainCommits {
 		m.openFilesPending = false
 		m.enterFilesViewFrom(d)
+		if m.restoreAfterFiles && m.pendingRestore != nil {
+			return *m, m.finishRestoreFiles()
+		}
 		// Files view needs path-scoped detail; restart load for selected file.
 		return *m, m.reloadDetailNow()
 	}

@@ -77,6 +77,14 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"session"},
+			desc:  "save, clear, or show the restored workspace session",
+			usage: ":session [save|clear]",
+			run: func(m *Model, args []string) tea.Cmd {
+				return m.exSession(args)
+			},
+		},
+		{
 			verbs: []string{"help", "h"},
 			desc:  "open the help overlay",
 			usage: ":help",
@@ -90,8 +98,8 @@ func exCommands() []exCmdSpec {
 			verbs: []string{"quit", "q"},
 			desc:  "quit ore",
 			usage: ":q",
-			run: func(_ *Model, _ []string) tea.Cmd {
-				return tea.Quit
+			run: func(m *Model, _ []string) tea.Cmd {
+				return m.beginQuit()
 			},
 		},
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/rsiota/ore/internal/config"
 	"github.com/rsiota/ore/internal/git"
+	"github.com/rsiota/ore/internal/session"
 )
 
 // Focus is which pane receives keys.
@@ -128,9 +129,15 @@ type Model struct {
 	// the current main view.
 	refreshPreferHash string
 
-	theme          string // active palette name (light|dark)
-	transparentBg  bool   // skip theme bg paint (terminal transparency)
-	config         *config.Config
+	theme         string // active palette name (light|dark)
+	transparentBg bool   // skip theme bg paint (terminal transparency)
+	config        *config.Config
+
+	sessionStore        *session.Store
+	pendingRestore      *session.State
+	restoreAfterFiles   bool
+	restoreAfterHistory bool
+	sessionKeepBlameFold bool // keep gutter fold from session across blame load
 }
 
 // New builds a model bound to repo. Call Init via the Bubble Tea program.
@@ -144,7 +151,10 @@ func New(repo *git.Repo) Model {
 		theme = defaultThemeName
 	}
 	applyTheme(theme)
-	return Model{
+
+	configDir, _ := config.Dir()
+	store := session.NewStore(configDir)
+	m := Model{
 		repo:           repo,
 		focus:          FocusMain,
 		main:           MainCommits,
@@ -161,7 +171,18 @@ func New(repo *git.Repo) Model {
 		theme:          activeThemeName,
 		transparentBg:  cfg.TransparentBackground,
 		config:         cfg,
+		sessionStore:   store,
 	}
+	if st, err := store.Load(repo.Path); err == nil && st.HasContent() {
+		cp := st
+		m.pendingRestore = &cp
+		m.applySessionChrome(st)
+		if st.ViewRev != "" {
+			m.viewRev = st.ViewRev
+		}
+		m.status = "restoring session…"
+	}
+	return m
 }
 
 type commitsLoadedMsg struct {
@@ -296,6 +317,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = fmt.Sprintf("refreshed · %d commits", len(m.commits))
 			return m, m.afterRefreshCmds()
 		}
+		if m.pendingRestore != nil {
+			return m, m.continueSessionRestore()
+		}
 		m.cursor = 0
 		m.commitOffset = 0
 		m.main = MainCommits
@@ -334,6 +358,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filterTyping = false
 		m.main = MainHistory
 		m.focus = FocusMain
+		if m.restoreAfterHistory && m.pendingRestore != nil {
+			return m, m.finishRestoreHistory()
+		}
 		m.status = fmt.Sprintf("history · %s · %d commits · b/enter blame", m.historyPath, len(m.history))
 		if len(m.history) > 0 {
 			return m, m.reloadDetail()
@@ -357,7 +384,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.blameOffset = 0
 		m.blameCol = blameColCode
 		m.blameCodeScroll = 0
-		m.blameGutterFold = blameGutterFoldDefault
+		if m.sessionKeepBlameFold {
+			m.sessionKeepBlameFold = false
+		} else {
+			m.blameGutterFold = blameGutterFoldDefault
+		}
 		m.blameSortCol = -1
 		m.blameSortDir = SortNone
 		if m.blamePreferLine > 0 {
@@ -492,7 +523,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "ctrl+c", "q":
-		return m, tea.Quit
+		return m, m.beginQuit()
 	case "ctrl+p":
 		m.chordG = false
 		m.branches.Hide()

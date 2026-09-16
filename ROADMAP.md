@@ -99,7 +99,7 @@ Analogous to creel’s FK explorer:
 ### Wave 4 — Polish & power
 
 - [ ] Timeline / churn strip
-- [ ] Session restore (repo + view + file + commit)
+- [x] Session restore (repo + view + file + commit)
 - [ ] Bookmarks, authors view, search results sidebar
 - [ ] Charts (`M` / `:bar` churn, author frequency) — optional
 - [ ] AI assist (optional, creel `Ctrl+F` shape): explain evolution, summarize range
