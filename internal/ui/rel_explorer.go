@@ -14,6 +14,7 @@ const (
 	relSection relRowKind = iota
 	relCommit
 	relFile
+	relHotSpot // co-changed path; count shown as a leading column
 	relAuthor
 	relMeta
 )
@@ -27,6 +28,7 @@ type relNode struct {
 	label      string
 	hash       string
 	path       string
+	count      int // co-change hits; leading column when kind == relHotSpot
 	selectable bool
 	expandable bool
 	expanded   bool
@@ -130,6 +132,7 @@ func buildLineRoot(rel git.LineRelations, e *RelExplorer) []*relNode {
 		kind: relFile, depth: 1, selectable: true,
 		path: rel.Path, hash: rel.Rev, label: rel.Path,
 	})
+	roots = append(roots, hotSpotNodes(rel.HotSpots, 0, nil, rel.Rev)...)
 	return roots
 }
 
@@ -163,6 +166,26 @@ func commitRelationBlocks(rel git.CommitRelations, depth int, parent *relNode, e
 		out = append(out, &relNode{
 			kind: relFile, depth: depth + 1, parent: parent, selectable: true,
 			path: f.Path, hash: rel.Hash, label: path,
+		})
+	}
+	out = append(out, hotSpotNodes(rel.HotSpots, depth, parent, rel.Hash)...)
+	return out
+}
+
+// hotSpotNodes builds the "Often with" section for co-changed paths.
+func hotSpotNodes(hot []git.CoChange, depth int, parent *relNode, rev string) []*relNode {
+	if len(hot) == 0 {
+		return nil
+	}
+	var out []*relNode
+	out = append(out, &relNode{
+		kind: relSection, depth: depth, parent: parent,
+		label: fmt.Sprintf("Often with (%d)", len(hot)),
+	})
+	for _, h := range hot {
+		out = append(out, &relNode{
+			kind: relHotSpot, depth: depth + 1, parent: parent, selectable: true,
+			path: h.Path, hash: rev, count: h.Count, label: h.Path,
 		})
 	}
 	return out
@@ -307,7 +330,7 @@ func (e *RelExplorer) ExpandOrDive() (activate bool, cmd tea.Cmd) {
 	if n == nil {
 		return false, nil
 	}
-	if n.kind == relFile {
+	if n.kind == relFile || n.kind == relHotSpot {
 		return true, nil
 	}
 	if n.kind != relCommit || !n.expandable {
@@ -508,6 +531,12 @@ func (e RelExplorer) View(focused bool) string {
 			lines = append(lines, cell(styleFocus, text, e.width))
 		case n.kind == relSection:
 			lines = append(lines, cell(styleHeader, text, e.width))
+		case n.kind == relCommit:
+			// Commits are the primary spine — full cell fg.
+			lines = append(lines, fitWidth(styleCell.Render(text), e.width))
+		case n.kind == relFile, n.kind == relHotSpot:
+			// Paths are secondary; muted keeps the tree scannable.
+			lines = append(lines, fitWidth(styleMuted.Render(text), e.width))
 		case !n.selectable:
 			lines = append(lines, fitWidth(styleMuted.Render(text), e.width))
 		default:
@@ -527,6 +556,10 @@ func renderRelNode(n *relNode) string {
 		glyph = "▸ "
 	case n.selectable:
 		glyph = "  "
+	}
+	if n.kind == relHotSpot {
+		// Leading count column so frequency lines up while scanning.
+		return indent + glyph + fmt.Sprintf("%3d  %s", n.count, n.label)
 	}
 	return indent + glyph + n.label
 }

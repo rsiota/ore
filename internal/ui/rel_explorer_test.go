@@ -59,6 +59,75 @@ func TestRelExplorerActivateFileRow(t *testing.T) {
 	}
 }
 
+func TestRelExplorerHotSpots(t *testing.T) {
+	var e RelExplorer
+	e.LoadCommit(git.CommitRelations{
+		Hash:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Subject: "root",
+		Author:  "a",
+		Email:   "a@b",
+		Files:   []git.FileChange{{Path: "a.go"}},
+		HotSpots: []git.CoChange{
+			{Path: "b.go", Count: 5, Total: 8},
+			{Path: "c.go", Count: 3, Total: 8},
+		},
+	})
+	found := false
+	var hot *relNode
+	for _, n := range e.visibleNodes() {
+		if n.kind == relSection && strings.Contains(n.label, "Often with") {
+			found = true
+		}
+		if n.kind == relHotSpot && n.path == "b.go" {
+			hot = n
+		}
+	}
+	if !found {
+		t.Fatal("expected Often with section")
+	}
+	if hot == nil {
+		t.Fatal("expected hot spot row")
+	}
+	if !hot.selectable || hot.count != 5 {
+		t.Fatalf("hot spot = %#v", hot)
+	}
+	got := renderRelNode(hot)
+	if !strings.Contains(got, "  5  b.go") {
+		t.Fatalf("leading count render = %q", got)
+	}
+}
+
+func TestRelExplorerPathRowsMutedVsCommit(t *testing.T) {
+	var e RelExplorer
+	e.SetSize(40, 20)
+	e.LoadCommit(git.CommitRelations{
+		Hash:     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Subject:  "root",
+		Author:   "a",
+		Email:    "a@b",
+		Parents:  []git.Commit{{Hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ShortHash: "bbbbbbb", Subject: "parent"}},
+		Children: []git.Commit{{Hash: "cccccccccccccccccccccccccccccccccccccccc", ShortHash: "ccccccc", Subject: "child"}},
+		Files:    []git.FileChange{{Path: "a.go"}},
+		HotSpots: []git.CoChange{{Path: "b.go", Count: 4, Total: 6}},
+	})
+	// Leave cursor on the first commit so the second commit paints with cell fg.
+	view := e.View(true)
+	mutedPrefix := sgrPrefix(styleMuted)
+	cellPrefix := sgrPrefix(styleCell)
+	if mutedPrefix == "" || cellPrefix == "" {
+		t.Fatal("expected styled prefixes")
+	}
+	if mutedPrefix == cellPrefix {
+		t.Fatal("muted and cell styles collapsed; hierarchy invisible")
+	}
+	if !strings.Contains(view, mutedPrefix) {
+		t.Fatalf("expected muted path styling in view")
+	}
+	if !strings.Contains(view, cellPrefix) {
+		t.Fatalf("expected full-fg commit styling in view:\n%s", view)
+	}
+}
+
 func TestRelExplorerExpandShowsNested(t *testing.T) {
 	var e RelExplorer
 	e.LoadCommit(git.CommitRelations{

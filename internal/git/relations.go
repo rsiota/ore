@@ -15,6 +15,7 @@ type CommitRelations struct {
 	Parents  []Commit
 	Children []Commit
 	Files    []FileChange
+	HotSpots []CoChange // paths that often change with this commit's files
 }
 
 // LineRelations is archaeology context for one blamed line.
@@ -24,6 +25,7 @@ type LineRelations struct {
 	Rev      string
 	History  []Commit // recent commits that touched the path (follow)
 	Previous *Commit  // previous blame commit when known
+	HotSpots []CoChange
 }
 
 // Relations returns parents, children, and files for hash.
@@ -58,6 +60,17 @@ func (r *Repo) Relations(ctx context.Context, hash string) (CommitRelations, err
 		}
 		out.Children = append(out.Children, c)
 	}
+
+	seeds := make([]string, 0, len(detail.Files)*2)
+	for _, f := range detail.Files {
+		seeds = append(seeds, f.Path)
+		if f.OldPath != "" {
+			seeds = append(seeds, f.OldPath)
+		}
+	}
+	if hot, err := r.CoChangedFiles(ctx, seeds, out.Hash); err == nil {
+		out.HotSpots = hot
+	}
 	return out, nil
 }
 
@@ -74,6 +87,9 @@ func (r *Repo) LineRelationsAt(ctx context.Context, path, rev string, line Blame
 		if err == nil {
 			out.Previous = &c
 		}
+	}
+	if hot, err := r.CoChangedFiles(ctx, []string{path}, ""); err == nil {
+		out.HotSpots = hot
 	}
 	return out, nil
 }

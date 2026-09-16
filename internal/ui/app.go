@@ -748,7 +748,7 @@ func (m Model) activateRelation() (tea.Model, tea.Cmd) {
 		m.loadingDetail = true
 		m.main = MainCommits
 		return m, m.reloadDetailNow()
-	case relFile:
+	case relFile, relHotSpot:
 		path := row.path
 		m.explorer.Close()
 		m.focus = FocusMain

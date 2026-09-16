@@ -95,7 +95,7 @@ Analogous to creel’s FK explorer:
 - [x] Docked right pane; `j/k`, `Enter` to jump, `esc`/`h` to close, `Tab` focus
 - [x] Lazy nested expand / deeper graph walk (`l` expand, `h` collapse)
 - [ ] Linked issues/PRs if parsed
-- [ ] Co-changed file hot spots
+- [x] Co-changed file hot spots (`Often with` in `g r`)
 ### Wave 4 — Polish & power
 
 - [ ] Timeline / churn strip
