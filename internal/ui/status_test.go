@@ -18,12 +18,12 @@ func TestStatusHintsStayDuringDetailReload(t *testing.T) {
 		branch:        "main",
 		head:          "abc1234",
 	}
-	got := m.renderStatus()
-	if !strings.Contains(got, "j/k/") {
-		t.Fatalf("hints missing while loadingDetail: %q", got)
+	plain := stripANSI(m.renderStatus())
+	if !strings.Contains(plain, "j/") || !strings.Contains(plain, "k/") {
+		t.Fatalf("hints missing while loadingDetail: %q", plain)
 	}
-	if strings.Contains(got, "fetching…") {
-		t.Fatalf("detail reload should not mark status bar busy: %q", got)
+	if strings.Contains(plain, "fetching…") {
+		t.Fatalf("detail reload should not mark status bar busy: %q", plain)
 	}
 }
 
@@ -38,13 +38,13 @@ func TestStatusHintsStayDuringHistoryFetch(t *testing.T) {
 		branch:         "main",
 		head:           "abc1234",
 	}
-	got := m.renderStatus()
+	plain := stripANSI(m.renderStatus())
 	// Mid grows with "fetching…"; assert a stable hint fragment rather than
 	// the full joined string (narrow widths truncate the right-hand cluster).
-	if !strings.Contains(got, "j/k/") || !strings.Contains(got, "ctrl+p") {
-		t.Fatalf("hints missing while loadingHistory: %q", got)
+	if !strings.Contains(plain, "j/") || !strings.Contains(plain, "ctrl+p") {
+		t.Fatalf("hints missing while loadingHistory: %q", plain)
 	}
-	if !strings.Contains(got, "fetching…") {
-		t.Fatalf("history load should still show fetching: %q", got)
+	if !strings.Contains(plain, "fetching…") {
+		t.Fatalf("history load should still show fetching: %q", plain)
 	}
 }

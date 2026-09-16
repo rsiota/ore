@@ -107,6 +107,13 @@ type Model struct {
 	err                string
 	status             string
 
+	// hintFlash is the individual key currently flashed cell-fg+bold on the
+	// status bar; hintDesc is its registry description shown briefly beside it.
+	hintFlash   string
+	hintFlashAt time.Time
+	hintDesc    string
+	hintDescAt  time.Time
+
 	branch  string
 	head    string
 	viewRev string // read-only log tip; empty = worktree HEAD
@@ -508,6 +515,12 @@ func (m Model) selectedHash() string {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Stage hint flash before overlay / dispatch so the status bar can light
+	// the pressed key (and its description) on the next paint.
+	if !m.exTyping && !m.filterTyping && !m.help.Visible() && !m.palette.IsVisible() && !m.branches.IsVisible() {
+		m.stageHintFlash(msg.String())
+	}
+
 	if m.branches.IsVisible() {
 		var cmd tea.Cmd
 		m.branches, cmd = m.branches.Update(msg)
@@ -1931,8 +1944,13 @@ func (m Model) renderStatus() string {
 	}
 	// Always show contextual hints when there is room (including during detail
 	// fetches and error states), so the right corner stays visually stable.
+	var descStyled string
 	if m.err == "" {
-		hints = styleMuted.Render(statusHints(m.main, m.explorer.Opened()))
+		hintList := statusHintList(m.main, m.explorer.Opened())
+		hints = renderHintStrip(hintList, m.hintFlash, m.hintFlashActive())
+		if m.hintDescActive() {
+			descStyled = m.hintDesc
+		}
 	}
 
 	mid := strings.Join(midParts, styleMuted.Render(" · "))
@@ -1954,7 +1972,16 @@ func (m Model) renderStatus() string {
 
 	right := rightTab
 	if hints != "" {
-		right = hints + " " + rightTab
+		var descBlock string
+		if descStyled != "" {
+			// Room for desc is measured after left + hints + tab; truncate so
+			// the flash strip and tab stay intact.
+			availDesc := m.width - lipgloss.Width(left) - lipgloss.Width(hints) - lipgloss.Width(rightTab) - 2 - 1
+			if availDesc >= 3 {
+				descBlock = styleCell.Render(truncateRunes(descStyled, availDesc)) + styleMuted.Render("  ")
+			}
+		}
+		right = descBlock + hints + " " + rightTab
 	}
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
@@ -1966,7 +1993,7 @@ func (m Model) renderStatus() string {
 				return fitWidth(left, m.width)
 			}
 		} else {
-			hints = styleMuted.Render(fitWidth(statusHints(m.main, m.explorer.Opened()), avail))
+			hints = truncateHintsStyled(hints, avail)
 			right = hints + " " + rightTab
 			gap = m.width - lipgloss.Width(left) - lipgloss.Width(right)
 			if gap < 1 {

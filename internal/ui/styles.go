@@ -59,6 +59,7 @@ var (
 
 	styleTitle      lipgloss.Style
 	styleMuted      lipgloss.Style
+	styleHintFlash  lipgloss.Style // pressed status-bar hint key: cell fg + bold
 	styleCell       lipgloss.Style // default grid body — explicit fg so paintBg stays readable
 	styleFocus      lipgloss.Style
 	styleCursorCell lipgloss.Style
@@ -107,6 +108,9 @@ func applyPalette(p colorPalette) {
 
 	styleTitle = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
 	styleMuted = lipgloss.NewStyle().Foreground(p.muted)
+	// Idle hints use muted; flash jumps to cell fg + bold so the pressed key
+	// stays visible on light themes where muted and fg are both dark.
+	styleHintFlash = lipgloss.NewStyle().Foreground(p.fg).Bold(true)
 	styleCell = lipgloss.NewStyle().Foreground(p.fg)
 	styleFocus = lipgloss.NewStyle().
 		Foreground(p.fg).
