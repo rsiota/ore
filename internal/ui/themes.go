@@ -8,7 +8,8 @@ const defaultThemeName = "light"
 // semantic colours (diff, age, hash) stand out.
 var lightPalette = colorPalette{
 	primary:         lipgloss.Color("#24292f"),
-	fg:              lipgloss.Color("#1f2328"),
+	// Soft slate body text — less stark than Primer’s near-black #1f2328.
+	fg:              lipgloss.Color("#373e47"),
 	muted:           lipgloss.Color("#656d76"),
 	label:           lipgloss.Color("#57606a"),
 	border:          lipgloss.Color("#d0d7de"),
@@ -21,8 +22,10 @@ var lightPalette = colorPalette{
 	hash:            lipgloss.Color("#0550ae"),
 	graphLine:       lipgloss.Color("#6e7781"),
 	graphNode:       lipgloss.Color("#afb8c1"),
-	add:             lipgloss.Color("#1a7f37"),
-	del:             lipgloss.Color("#cf222e"),
+	// Softer than Primer success/danger fg so dual washes (esp. word spans)
+	// stay readable without shouting.
+	add:             lipgloss.Color("#2a7340"),
+	del:             lipgloss.Color("#c24b52"),
 	addWash:         lipgloss.Color("#dafbe1"),
 	delWash:         lipgloss.Color("#ffebe9"),
 	addStrong:       lipgloss.Color("#aceebb"),
