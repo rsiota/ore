@@ -96,8 +96,10 @@ func registry() []Section {
 			Items: []Binding{
 				{"g r", []string{"g", "r"}, "open explorer for commit or blame line", "gr"},
 				{"j/k", []string{"j", "k"}, "move in explorer", "j/k"},
-				{"enter / l", []string{"enter", "l"}, "jump to commit or file history", "enter"},
-				{"esc / h", []string{"esc", "h"}, "close explorer", "esc"},
+				{"l", []string{"l"}, "expand commit / dive into nested", "l"},
+				{"h", []string{"h"}, "collapse nested / close explorer", "h"},
+				{"enter", []string{"enter"}, "jump to commit or file history", "enter"},
+				{"esc", []string{"esc"}, "close explorer", "esc"},
 				{"tab", []string{"tab"}, "focus main ↔ explorer", "tab"},
 			},
 		},

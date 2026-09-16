@@ -285,6 +285,15 @@ func loadLineRelationsCmd(repo *git.Repo, path, rev string, line git.BlameLine) 
 	}
 }
 
+func loadRelExpandCmd(repo *git.Repo, hash, nodeID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		rel, err := repo.Relations(ctx, hash)
+		return relExpandLoadedMsg{nodeID: nodeID, rel: rel, err: err}
+	}
+}
+
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
 	return loadCommitsCmd(m.repo, m.viewRev)
@@ -429,7 +438,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.layoutExplorer()
 		m.focus = FocusExplorer
-		m.status = "relationships · enter open · esc close"
+		m.status = "relationships · l expand · enter open · h collapse · esc close"
+		return m, nil
+
+	case relExpandRequestMsg:
+		return m, loadRelExpandCmd(m.repo, msg.hash, msg.nodeID)
+
+	case relExpandLoadedMsg:
+		m.explorer.ApplyExpand(msg.nodeID, msg.rel, msg.err)
+		m.layoutExplorer()
+		if msg.err != nil {
+			m.status = "expand failed"
+		} else {
+			m.status = "relationships · l expand · enter open · h collapse · esc close"
+		}
 		return m, nil
 
 	case branchesLoadedMsg:
@@ -652,7 +674,7 @@ func (m Model) cycleFocus() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleExplorerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	consumed, activate := m.explorer.Update(msg)
+	consumed, activate, expandCmd := m.explorer.Update(msg)
 	if !consumed {
 		return m, nil
 	}
@@ -660,6 +682,9 @@ func (m Model) handleExplorerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = FocusMain
 		m.refreshStatus()
 		return m, m.reloadDetail()
+	}
+	if expandCmd != nil {
+		return m, expandCmd
 	}
 	if activate {
 		return m.activateRelation()

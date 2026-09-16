@@ -18,28 +18,39 @@ const (
 	relMeta
 )
 
-type relRow struct {
+// relMaxDepth caps nested expand so graph walks stay scannable.
+const relMaxDepth = 6
+
+type relNode struct {
 	kind       relRowKind
 	depth      int
 	label      string
 	hash       string
 	path       string
 	selectable bool
+	expandable bool
+	expanded   bool
+	loading    bool
+	id         string
+	parent     *relNode
+	children   []*relNode
 }
 
-// RelExplorer is a docked relationship browser (creel-style g r).
+// RelExplorer is a docked relationship browser (creel-style g r) with lazy
+// nested expand on commit rows.
 type RelExplorer struct {
 	open   bool
 	title  string
-	rows   []relRow
-	cursor int
+	root   []*relNode // top-level visible tree roots
+	cursor int        // index into visibleNodes()
 	offset int
 	width  int
 	height int
+	seq    int // expand request id
 }
 
-func (e *RelExplorer) Open()       { e.open = true }
-func (e *RelExplorer) Close()      { e.open = false; e.rows = nil; e.cursor = 0; e.offset = 0 }
+func (e *RelExplorer) Open()  { e.open = true }
+func (e *RelExplorer) Close() { e.open = false; e.root = nil; e.cursor = 0; e.offset = 0 }
 func (e RelExplorer) Opened() bool { return e.open }
 
 func (e *RelExplorer) SetSize(w, h int) {
@@ -47,155 +58,205 @@ func (e *RelExplorer) SetSize(w, h int) {
 	e.height = h
 }
 
+func (e *RelExplorer) nextID() string {
+	e.seq++
+	return fmt.Sprintf("n%d", e.seq)
+}
+
 func (e *RelExplorer) LoadCommit(rel git.CommitRelations) {
-	var rows []relRow
+	e.root = buildCommitRoot(rel, e)
+	e.title = " relationships"
+	e.cursor = e.firstSelectableVisible()
+	e.offset = 0
+	e.open = true
+}
+
+func (e *RelExplorer) LoadLine(rel git.LineRelations) {
+	e.root = buildLineRoot(rel, e)
+	e.title = " line relationships"
+	e.cursor = e.firstSelectableVisible()
+	e.offset = 0
+	e.open = true
+}
+
+func buildCommitRoot(rel git.CommitRelations, e *RelExplorer) []*relNode {
 	short := rel.Hash
 	if len(short) > 7 {
 		short = short[:7]
 	}
-	rows = append(rows, relRow{
-		kind: relMeta, label: fmt.Sprintf("%s  %s", short, rel.Subject), selectable: false,
+	var roots []*relNode
+	roots = append(roots, &relNode{
+		kind: relMeta, label: fmt.Sprintf("%s  %s", short, rel.Subject),
 	})
-	rows = append(rows, relRow{kind: relAuthor, label: fmt.Sprintf("%s <%s>", rel.Author, rel.Email), depth: 0, selectable: false})
-	rows = append(rows, relRow{})
+	roots = append(roots, &relNode{
+		kind: relAuthor, label: fmt.Sprintf("%s <%s>", rel.Author, rel.Email),
+	})
+	roots = append(roots, &relNode{kind: relMeta, label: ""})
+	roots = append(roots, commitRelationBlocks(rel, 0, nil, e)...)
+	return roots
+}
 
-	rows = append(rows, relRow{kind: relSection, label: fmt.Sprintf("Parents (%d)", len(rel.Parents))})
+func buildLineRoot(rel git.LineRelations, e *RelExplorer) []*relNode {
+	bl := rel.Line
+	var roots []*relNode
+	roots = append(roots, &relNode{
+		kind:  relMeta,
+		label: fmt.Sprintf("line %d · %s  %s", bl.Line, bl.ShortHash, bl.Summary),
+	})
+	roots = append(roots, &relNode{
+		kind: relMeta, depth: 1, label: truncateRunes(bl.Text, 60),
+	})
+	roots = append(roots, &relNode{kind: relMeta, label: ""})
+
+	roots = append(roots, &relNode{kind: relSection, label: "This commit"})
+	roots = append(roots, e.commitNode(bl.Hash, fmt.Sprintf("%s  %s", bl.ShortHash, bl.Summary), 1, nil))
+
+	roots = append(roots, &relNode{kind: relSection, label: "Previous"})
+	if rel.Previous != nil {
+		roots = append(roots, e.commitNode(rel.Previous.Hash, formatRelCommit(*rel.Previous), 1, nil))
+	} else {
+		roots = append(roots, &relNode{kind: relMeta, depth: 1, label: "(none)"})
+	}
+
+	roots = append(roots, &relNode{kind: relSection, label: fmt.Sprintf("File history (%d)", len(rel.History))})
+	for _, c := range rel.History {
+		n := e.commitNode(c.Hash, formatRelCommit(c), 1, nil)
+		n.path = rel.Path
+		roots = append(roots, n)
+	}
+
+	roots = append(roots, &relNode{kind: relSection, label: "File"})
+	roots = append(roots, &relNode{
+		kind: relFile, depth: 1, selectable: true,
+		path: rel.Path, hash: rel.Rev, label: rel.Path,
+	})
+	return roots
+}
+
+func commitRelationBlocks(rel git.CommitRelations, depth int, parent *relNode, e *RelExplorer) []*relNode {
+	var out []*relNode
+	out = append(out, &relNode{kind: relSection, depth: depth, parent: parent, label: fmt.Sprintf("Parents (%d)", len(rel.Parents))})
 	if len(rel.Parents) == 0 {
-		rows = append(rows, relRow{kind: relMeta, depth: 1, label: "(root)"})
+		out = append(out, &relNode{kind: relMeta, depth: depth + 1, parent: parent, label: "(root)"})
 	}
 	for _, p := range rel.Parents {
-		rows = append(rows, relRow{
-			kind: relCommit, depth: 1, selectable: true,
-			hash: p.Hash, label: formatRelCommit(p),
-		})
+		out = append(out, e.commitNode(p.Hash, formatRelCommit(p), depth+1, parent))
 	}
 
-	rows = append(rows, relRow{kind: relSection, label: fmt.Sprintf("Children (%d)", len(rel.Children))})
+	out = append(out, &relNode{kind: relSection, depth: depth, parent: parent, label: fmt.Sprintf("Children (%d)", len(rel.Children))})
 	if len(rel.Children) == 0 {
-		rows = append(rows, relRow{kind: relMeta, depth: 1, label: "(none)"})
+		out = append(out, &relNode{kind: relMeta, depth: depth + 1, parent: parent, label: "(none)"})
 	}
 	for _, c := range rel.Children {
-		rows = append(rows, relRow{
-			kind: relCommit, depth: 1, selectable: true,
-			hash: c.Hash, label: formatRelCommit(c),
-		})
+		out = append(out, e.commitNode(c.Hash, formatRelCommit(c), depth+1, parent))
 	}
 
-	rows = append(rows, relRow{kind: relSection, label: fmt.Sprintf("Files (%d)", len(rel.Files))})
+	out = append(out, &relNode{kind: relSection, depth: depth, parent: parent, label: fmt.Sprintf("Files (%d)", len(rel.Files))})
 	if len(rel.Files) == 0 {
-		rows = append(rows, relRow{kind: relMeta, depth: 1, label: "(none)"})
+		out = append(out, &relNode{kind: relMeta, depth: depth + 1, parent: parent, label: "(none)"})
 	}
 	for _, f := range rel.Files {
 		path := f.Path
 		if f.OldPath != "" {
 			path = f.OldPath + " → " + f.Path
 		}
-		rows = append(rows, relRow{
-			kind: relFile, depth: 1, selectable: true,
+		out = append(out, &relNode{
+			kind: relFile, depth: depth + 1, parent: parent, selectable: true,
 			path: f.Path, hash: rel.Hash, label: path,
 		})
 	}
-
-	e.title = " relationships"
-	e.rows = rows
-	e.cursor = firstSelectable(rows)
-	e.offset = 0
-	e.open = true
+	return out
 }
 
-func (e *RelExplorer) LoadLine(rel git.LineRelations) {
-	var rows []relRow
-	bl := rel.Line
-	rows = append(rows, relRow{
-		kind:  relMeta,
-		label: fmt.Sprintf("line %d · %s  %s", bl.Line, bl.ShortHash, bl.Summary),
-	})
-	rows = append(rows, relRow{kind: relMeta, depth: 1, label: truncateRunes(bl.Text, 60)})
-	rows = append(rows, relRow{})
-
-	rows = append(rows, relRow{kind: relSection, label: "This commit"})
-	rows = append(rows, relRow{
-		kind: relCommit, depth: 1, selectable: true,
-		hash: bl.Hash, label: fmt.Sprintf("%s  %s", bl.ShortHash, bl.Summary),
-	})
-
-	rows = append(rows, relRow{kind: relSection, label: "Previous"})
-	if rel.Previous != nil {
-		rows = append(rows, relRow{
-			kind: relCommit, depth: 1, selectable: true,
-			hash: rel.Previous.Hash, label: formatRelCommit(*rel.Previous),
-		})
-	} else {
-		rows = append(rows, relRow{kind: relMeta, depth: 1, label: "(none)"})
+func (e *RelExplorer) commitNode(hash, label string, depth int, parent *relNode) *relNode {
+	return &relNode{
+		kind:       relCommit,
+		depth:      depth,
+		label:      label,
+		hash:       hash,
+		selectable: true,
+		expandable: depth < relMaxDepth,
+		id:         e.nextID(),
+		parent:     parent,
 	}
-
-	rows = append(rows, relRow{kind: relSection, label: fmt.Sprintf("File history (%d)", len(rel.History))})
-	for _, c := range rel.History {
-		rows = append(rows, relRow{
-			kind: relCommit, depth: 1, selectable: true,
-			hash: c.Hash, path: rel.Path, label: formatRelCommit(c),
-		})
-	}
-
-	rows = append(rows, relRow{kind: relSection, label: "File"})
-	rows = append(rows, relRow{
-		kind: relFile, depth: 1, selectable: true,
-		path: rel.Path, hash: rel.Rev, label: rel.Path,
-	})
-
-	e.title = " line relationships"
-	e.rows = rows
-	e.cursor = firstSelectable(rows)
-	e.offset = 0
-	e.open = true
 }
 
 func formatRelCommit(c git.Commit) string {
 	return fmt.Sprintf("%s  %s", c.ShortHash, c.Subject)
 }
 
-func firstSelectable(rows []relRow) int {
-	for i, r := range rows {
-		if r.selectable {
+func (e *RelExplorer) visibleNodes() []*relNode {
+	var out []*relNode
+	var walk func([]*relNode)
+	walk = func(nodes []*relNode) {
+		for _, n := range nodes {
+			if n == nil {
+				continue
+			}
+			out = append(out, n)
+			if n.expanded && len(n.children) > 0 {
+				walk(n.children)
+			}
+		}
+	}
+	walk(e.root)
+	return out
+}
+
+func (e *RelExplorer) firstSelectableVisible() int {
+	vis := e.visibleNodes()
+	for i, n := range vis {
+		if n.selectable {
 			return i
 		}
 	}
 	return 0
 }
 
-func (e *RelExplorer) Selected() (relRow, bool) {
-	if e.cursor < 0 || e.cursor >= len(e.rows) {
-		return relRow{}, false
+func (e *RelExplorer) Selected() (relNode, bool) {
+	vis := e.visibleNodes()
+	if e.cursor < 0 || e.cursor >= len(vis) {
+		return relNode{}, false
 	}
-	r := e.rows[e.cursor]
-	if !r.selectable {
-		return relRow{}, false
+	n := vis[e.cursor]
+	if n == nil || !n.selectable {
+		return relNode{}, false
 	}
-	return r, true
+	return *n, true
+}
+
+func (e *RelExplorer) selectedNode() *relNode {
+	vis := e.visibleNodes()
+	if e.cursor < 0 || e.cursor >= len(vis) {
+		return nil
+	}
+	return vis[e.cursor]
 }
 
 func (e *RelExplorer) move(delta int) {
-	if len(e.rows) == 0 {
+	vis := e.visibleNodes()
+	if len(vis) == 0 {
 		return
 	}
-	for i := 0; i < len(e.rows); i++ {
+	for i := 0; i < len(vis); i++ {
 		e.cursor += delta
 		if e.cursor < 0 {
-			e.cursor = len(e.rows) - 1
+			e.cursor = len(vis) - 1
 		}
-		if e.cursor >= len(e.rows) {
+		if e.cursor >= len(vis) {
 			e.cursor = 0
 		}
-		if e.rows[e.cursor].selectable || !hasSelectable(e.rows) {
+		if vis[e.cursor].selectable || !hasSelectableNodes(vis) {
 			break
 		}
+		vis = e.visibleNodes()
 	}
 	e.ensureVisible()
 }
 
-func hasSelectable(rows []relRow) bool {
-	for _, r := range rows {
-		if r.selectable {
+func hasSelectableNodes(nodes []*relNode) bool {
+	for _, n := range nodes {
+		if n != nil && n.selectable {
 			return true
 		}
 	}
@@ -204,6 +265,10 @@ func hasSelectable(rows []relRow) bool {
 
 func (e *RelExplorer) ensureVisible() {
 	h := max(1, e.height)
+	vis := e.visibleNodes()
+	if e.cursor >= len(vis) {
+		e.cursor = max(0, len(vis)-1)
+	}
 	if e.cursor < e.offset {
 		e.offset = e.cursor
 	}
@@ -212,72 +277,258 @@ func (e *RelExplorer) ensureVisible() {
 	}
 }
 
-// Update handles keys while the explorer is focused. Returns true if consumed.
-func (e *RelExplorer) Update(msg tea.KeyMsg) (consumed bool, activate bool) {
+func (e *RelExplorer) cursorToNode(target *relNode) {
+	vis := e.visibleNodes()
+	for i, n := range vis {
+		if n == target {
+			e.cursor = i
+			e.ensureVisible()
+			return
+		}
+	}
+}
+
+func (e *RelExplorer) cursorToFirstChild(parent *relNode) {
+	vis := e.visibleNodes()
+	for i, n := range vis {
+		if n.parent == parent {
+			e.cursor = i
+			e.ensureVisible()
+			return
+		}
+	}
+}
+
+// ExpandOrDive expands a collapsed commit, dives into an expanded one, or
+// signals activate when the row is not expandable. Returns an async load cmd
+// when a nested Relations fetch is needed.
+func (e *RelExplorer) ExpandOrDive() (activate bool, cmd tea.Cmd) {
+	n := e.selectedNode()
+	if n == nil {
+		return false, nil
+	}
+	if n.kind == relFile {
+		return true, nil
+	}
+	if n.kind != relCommit || !n.expandable {
+		return n.selectable, nil
+	}
+	if n.expanded {
+		e.cursorToFirstChild(n)
+		return false, nil
+	}
+	if n.loading {
+		return false, nil
+	}
+	if n.children != nil {
+		n.expanded = true
+		e.cursorToFirstChild(n)
+		return false, nil
+	}
+	if n.hash == "" {
+		return true, nil
+	}
+	if ancestorHasHash(n.parent, n.hash) {
+		n.children = []*relNode{{
+			kind: relMeta, depth: n.depth + 1, parent: n, label: "(already in path)",
+		}}
+		n.expanded = true
+		e.cursorToFirstChild(n)
+		return false, nil
+	}
+	n.loading = true
+	n.children = []*relNode{{
+		kind: relMeta, depth: n.depth + 1, parent: n, label: "loading…",
+	}}
+	n.expanded = true
+	e.ensureVisible()
+	id := n.id
+	hash := n.hash
+	return false, func() tea.Msg {
+		return relExpandRequestMsg{nodeID: id, hash: hash}
+	}
+}
+
+func ancestorHasHash(n *relNode, hash string) bool {
+	for p := n; p != nil; p = p.parent {
+		if p.hash != "" && hashMatch(p.hash, hash) {
+			return true
+		}
+	}
+	return false
+}
+
+// CollapseOrClose collapses the current subtree, or closes the explorer when
+// already at a top-level collapsed row.
+func (e *RelExplorer) CollapseOrClose() (closed bool) {
+	n := e.selectedNode()
+	if n == nil {
+		e.Close()
+		return true
+	}
+	if n.expanded {
+		n.expanded = false
+		e.cursorToNode(n)
+		return false
+	}
+	if n.parent != nil {
+		p := n.parent
+		// Walk up to the expandable commit parent if we're on a section/meta child.
+		for p != nil && !p.expandable {
+			p = p.parent
+		}
+		if p != nil && p.expanded {
+			p.expanded = false
+			e.cursorToNode(p)
+			return false
+		}
+		if p != nil {
+			e.cursorToNode(p)
+			return false
+		}
+	}
+	e.Close()
+	return true
+}
+
+// ApplyExpand attaches lazy-loaded relations under the matching node.
+func (e *RelExplorer) ApplyExpand(nodeID string, rel git.CommitRelations, err error) {
+	n := e.findNodeByID(e.root, nodeID)
+	if n == nil {
+		return
+	}
+	n.loading = false
+	if err != nil {
+		n.children = []*relNode{{
+			kind: relMeta, depth: n.depth + 1, parent: n, label: "error: " + err.Error(),
+		}}
+		n.expanded = true
+		e.ensureVisible()
+		return
+	}
+	kids := commitRelationBlocks(rel, n.depth+1, n, e)
+	for _, c := range kids {
+		c.parent = n
+	}
+	n.children = kids
+	n.expanded = true
+	e.cursorToFirstChild(n)
+}
+
+func (e *RelExplorer) findNodeByID(nodes []*relNode, id string) *relNode {
+	for _, n := range nodes {
+		if n == nil {
+			continue
+		}
+		if n.id == id {
+			return n
+		}
+		if found := e.findNodeByID(n.children, id); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+type relExpandRequestMsg struct {
+	nodeID string
+	hash   string
+}
+
+type relExpandLoadedMsg struct {
+	nodeID string
+	rel    git.CommitRelations
+	err    error
+}
+
+// Update handles keys while the explorer is focused.
+// activate=true → jump to selection; expandCmd is a lazy nested load.
+func (e *RelExplorer) Update(msg tea.KeyMsg) (consumed bool, activate bool, expandCmd tea.Cmd) {
 	if !e.open {
-		return false, false
+		return false, false, nil
 	}
 	switch msg.String() {
 	case "j", "down":
 		e.move(1)
-		return true, false
+		return true, false, nil
 	case "k", "up":
 		e.move(-1)
-		return true, false
+		return true, false, nil
 	case "g", "home":
-		e.cursor = firstSelectable(e.rows)
+		e.cursor = e.firstSelectableVisible()
 		e.ensureVisible()
-		return true, false
+		return true, false, nil
 	case "G", "end":
-		for i := len(e.rows) - 1; i >= 0; i-- {
-			if e.rows[i].selectable {
+		vis := e.visibleNodes()
+		for i := len(vis) - 1; i >= 0; i-- {
+			if vis[i].selectable {
 				e.cursor = i
 				break
 			}
 		}
 		e.ensureVisible()
-		return true, false
+		return true, false, nil
 	case "ctrl+d":
 		e.move(max(1, e.height/2))
-		return true, false
+		return true, false, nil
 	case "ctrl+u":
 		e.move(-max(1, e.height/2))
-		return true, false
-	case "enter", "l":
-		return true, true
-	case "esc", "h", "q":
+		return true, false, nil
+	case "l", "right":
+		act, cmd := e.ExpandOrDive()
+		return true, act, cmd
+	case "enter":
+		return true, true, nil
+	case "h", "left":
+		e.CollapseOrClose()
+		return true, false, nil
+	case "esc", "q":
 		e.Close()
-		return true, false
+		return true, false, nil
 	}
-	return false, false
+	return false, false, nil
 }
 
 func (e RelExplorer) View(focused bool) string {
 	if !e.open || e.width <= 0 || e.height <= 0 {
 		return ""
 	}
+	vis := e.visibleNodes()
 	var lines []string
 	h := e.height
 	if h < 1 {
 		h = 1
 	}
-	end := min(len(e.rows), e.offset+h)
+	end := min(len(vis), e.offset+h)
 	for i := e.offset; i < end; i++ {
-		r := e.rows[i]
-		prefix := strings.Repeat("  ", r.depth)
-		text := prefix + r.label
+		n := vis[i]
+		text := renderRelNode(n)
 		switch {
-		case i == e.cursor && r.selectable:
+		case i == e.cursor && n.selectable:
 			lines = append(lines, cell(styleFocus, text, e.width))
-		case r.kind == relSection:
+		case n.kind == relSection:
 			lines = append(lines, cell(styleHeader, text, e.width))
-		case !r.selectable:
+		case !n.selectable:
 			lines = append(lines, fitWidth(styleMuted.Render(text), e.width))
 		default:
-			lines = append(lines, fitWidth(text, e.width))
+			lines = append(lines, fitWidth(styleCell.Render(text), e.width))
 		}
 	}
 	return padPane(lines, e.width, e.height)
+}
+
+func renderRelNode(n *relNode) string {
+	indent := strings.Repeat("  ", n.depth)
+	glyph := "  "
+	switch {
+	case n.expandable && n.expanded:
+		glyph = "▾ "
+	case n.expandable:
+		glyph = "▸ "
+	case n.selectable:
+		glyph = "  "
+	}
+	return indent + glyph + n.label
 }
 
 func truncateRunes(s string, max int) string {

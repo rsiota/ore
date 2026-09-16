@@ -44,7 +44,7 @@ func TestStatusHintsAreKeyOnly(t *testing.T) {
 		t.Fatalf("commits hints = %q", got)
 	}
 	got = statusHints(MainCommits, true)
-	if got != "gr/j/k/enter/esc/tab" {
+	if got != "gr/j/k/l/h/enter/esc/tab" {
 		t.Fatalf("explorer hints = %q", got)
 	}
 	for _, s := range []string{

@@ -93,7 +93,7 @@ Analogous to creel’s FK explorer:
 - [x] From **commit**: parents, children, files, author (`g r`)
 - [x] From **blame line**: this commit, previous, file history, file
 - [x] Docked right pane; `j/k`, `Enter` to jump, `esc`/`h` to close, `Tab` focus
-- [ ] Lazy nested expand / deeper graph walk
+- [x] Lazy nested expand / deeper graph walk (`l` expand, `h` collapse)
 - [ ] Linked issues/PRs if parsed
 - [ ] Co-changed file hot spots
 ### Wave 4 — Polish & power
