@@ -2093,7 +2093,7 @@ func (m Model) renderBlamePane(width, height int) string {
 		SoftCursor:          true,
 		SkipCursorPaintCols: []int{blameColCode},
 		RightAlignCols:      []int{blameColLine},
-		MuteCols:            []int{blameColCommit, blameColAge, blameColAuthor},
+		MuteCols:            []int{blameColCommit, blameColAge},
 		HiddenCols:          blameHiddenCols(m.blameGutterFold),
 		HScrollCol:          blameColCode,
 		HScroll:             m.blameCodeScroll,
@@ -2105,6 +2105,23 @@ func (m Model) renderBlamePane(width, height int) string {
 				st := styleZenHunk
 				if focused {
 					st = lipgloss.NewStyle().Foreground(colorPrimary)
+				}
+				return st.Render(text), true
+			case blameColAuthor:
+				if row < 0 || row >= len(idx) {
+					return "", false
+				}
+				// Colour only when the name is shown (repeats stay blank).
+				name := m.blame[idx[row]].Author
+				if strings.TrimSpace(text) == "" {
+					if focused {
+						return styleRowFocus.Render(text), true
+					}
+					return "", false
+				}
+				st := authorNameStyle(name)
+				if focused {
+					st = st.Background(colorRowFocusBg)
 				}
 				return st.Render(text), true
 			case blameColCode:

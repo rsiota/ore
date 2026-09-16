@@ -83,7 +83,7 @@ Files: `cmd/ore`, `internal/git`, `internal/ui`, `internal/config`, `internal/ve
 - [x] Cursor → detail shows commit that last touched the line (path-scoped)
 - [x] `f` / `g f` follow line backward via porcelain `previous`
 - [x] `:blame path` ex-command (and `:history`, `:goto`)
-- [ ] Author colouring / mini line timeline
+- [x] Author colouring (quiet hue on author column only; code stays age-washed)
 - [ ] Collapse/expand logical blocks (later)
 
 ### Wave 3 — Relationship explorer (`g r`) ✅ (started)
