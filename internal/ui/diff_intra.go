@@ -335,37 +335,62 @@ func shiftSpans(spans []byteSpan, from, to int) []byteSpan {
 // renderHighlightedCell paints soft wash on the whole cell and a stronger wash
 // on changed spans. Padding uses the soft wash so the line reads as one band.
 func renderHighlightedCell(base, strong lipgloss.Style, text string, spans []byteSpan, width int) string {
+	return renderLayeredCell(base, strong, strong, text, spans, nil, width)
+}
+
+// renderLayeredCell paints base across the cell, intraStrong on intra spans, and
+// searchStrong on search spans (search wins on overlap).
+func renderLayeredCell(base, intraStrong, searchStrong lipgloss.Style, text string, intra, search []byteSpan, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	spans = mergeByteSpans(spans)
-	if len(spans) == 0 {
+	intra = mergeByteSpans(intra)
+	search = mergeByteSpans(search)
+	if len(intra) == 0 && len(search) == 0 {
 		return cell(base, text, width)
 	}
-	var b strings.Builder
-	pos := 0
-	for _, sp := range spans {
-		start := sp.Start
-		end := sp.End
-		if start < pos {
-			start = pos
-		}
-		if start > len(text) {
-			break
-		}
-		if end > len(text) {
-			end = len(text)
-		}
-		if start > pos {
-			b.WriteString(base.Render(text[pos:start]))
-		}
-		if end > start {
-			b.WriteString(strong.Render(text[start:end]))
-		}
-		pos = max(pos, end)
+	n := len(text)
+	if n == 0 {
+		return cell(base, text, width)
 	}
-	if pos < len(text) {
-		b.WriteString(base.Render(text[pos:]))
+	cover := make([]byte, n) // 0 base, 1 intra, 2 search
+	mark := func(spans []byteSpan, layer byte) {
+		for _, sp := range spans {
+			start, end := sp.Start, sp.End
+			if start < 0 {
+				start = 0
+			}
+			if end > n {
+				end = n
+			}
+			for i := start; i < end; i++ {
+				if layer >= cover[i] {
+					cover[i] = layer
+				}
+			}
+		}
+	}
+	mark(intra, 1)
+	mark(search, 2)
+
+	var b strings.Builder
+	i := 0
+	for i < n {
+		layer := cover[i]
+		j := i + 1
+		for j < n && cover[j] == layer {
+			j++
+		}
+		chunk := text[i:j]
+		switch layer {
+		case 2:
+			b.WriteString(searchStrong.Render(chunk))
+		case 1:
+			b.WriteString(intraStrong.Render(chunk))
+		default:
+			b.WriteString(base.Render(chunk))
+		}
+		i = j
 	}
 	styled := b.String()
 	w := lipgloss.Width(styled)

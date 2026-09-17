@@ -35,6 +35,15 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"nohl", "nohls", "hlclear", "clearhl"},
+			desc:  "turn off pickaxe match highlighting (keeps results)",
+			usage: ":nohl",
+			run: func(m *Model, _ []string) tea.Cmd {
+				m.clearPickaxeHighlight()
+				return nil
+			},
+		},
+		{
 			verbs: []string{"pickaxe", "pick", "S"},
 			desc:  "search history for commits that added/removed a string (-S)",
 			usage: ":pickaxe <string>  |  :S <string>",

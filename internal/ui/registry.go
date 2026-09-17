@@ -119,6 +119,7 @@ func registry() []Section {
 			Items: []Binding{
 				{":pickaxe / :S", []string{":"}, "commits that added/removed a string", ""},
 				{":G", []string{":"}, "commits matching a regexp pickaxe", ""},
+				{":nohl", []string{":"}, "clear pickaxe match washes", ""},
 				{"j/k", []string{"j", "k"}, "move in pickaxe results", "j/k"},
 				{"enter", []string{"enter"}, "open path history (or files)", "enter"},
 				{"b", []string{"b"}, "blame hit path at commit", "b"},

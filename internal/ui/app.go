@@ -106,6 +106,7 @@ type Model struct {
 	loadingPick  bool
 	pickaxeFrom  MainView // view to restore on esc
 	pickaxeDive  bool     // drilled from pickaxe into history/files/blame
+	pickHlOn     bool     // wash matching spans in detail/blame
 
 	detail           *git.CommitDetail
 	detailFilterPath string // path requested by the in-flight / latest reloadDetail
@@ -536,6 +537,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chordG = false
 		m.status = fmt.Sprintf("pickaxe · %s %q · %d hits · enter files · b blame · esc back",
 			pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe))
+		if m.pickHlOn {
+			m.status += " · hl on"
+		}
 		if len(m.pickaxe) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -1052,6 +1056,9 @@ func (m *Model) refreshStatus() {
 		if m.pickPath != "" {
 			m.status += " · " + m.pickPath
 		}
+		if m.pickHlOn {
+			m.status += " · hl · :nohl"
+		}
 	}
 }
 
@@ -1063,6 +1070,8 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		m.pickOffset = 0
 		m.pickQuery = ""
 		m.pickaxeDive = false
+		m.pickHlOn = false
+		m.invalidateDetailCache()
 		m.main = m.pickaxeFrom
 		if m.main == MainPickaxe {
 			m.main = MainCommits
@@ -1731,10 +1740,12 @@ func (m Model) startPickaxe(query string, mode git.PickaxeMode, path string) (te
 	m.pickQuery = query
 	m.pickMode = mode
 	m.pickPath = path
+	m.pickHlOn = true
 	m.loadingPick = true
 	m.err = ""
 	m.chordG = false
 	m.focus = FocusMain
+	m.invalidateDetailCache()
 	m.status = fmt.Sprintf("pickaxe · searching %s %q…", pickaxeModeLabel(mode), truncateQuery(query, 32))
 	rev := m.viewRev
 	return m, loadPickaxeCmd(m.repo, git.PickaxeOptions{
@@ -2165,7 +2176,7 @@ func (m Model) detailVisualLines() []string {
 	if m.detailWrap {
 		return m.ensureDetailVisual(width, body)
 	}
-	return expandDetailRows(body, width, false)
+	return m.expandDetailRows(body, width, false)
 }
 
 func (m Model) detailVisualCount() int {
@@ -2641,9 +2652,20 @@ func (m Model) renderBlamePane(width, height int) string {
 				if row < 0 || row >= len(idx) {
 					return "", false
 				}
-				// Age wash only — row identity is the › mark, not a code fill.
+				// Age wash as base; pickaxe spans get a search-strong overlay.
 				bl := m.blame[idx[row]]
-				return blameAgeStyle(bl.When, newest, oldest).Render(text), true
+				base := blameAgeStyle(bl.When, newest, oldest)
+				search := m.pickaxeSearchSpans(text)
+				if len(search) == 0 {
+					return base.Render(text), true
+				}
+				// Width 0 → renderLayeredCell returns ""; use content width so
+				// the grid still owns column padding.
+				w := lipgloss.Width(text)
+				if w < 1 {
+					w = 1
+				}
+				return renderLayeredCell(base, base, styleSearchStrong, text, nil, search, w), true
 			default:
 				return "", false
 			}
@@ -2830,15 +2852,22 @@ func (m Model) detailLinesUnified(d *git.CommitDetail) []string {
 const detailSepMarker = "\x1edetail-sep"
 
 func expandDetailRows(body []string, width int, wrap bool) []string {
+	// Package helper for tests — no pickaxe highlight context.
+	var m Model
+	return m.expandDetailRows(body, width, wrap)
+}
+
+func (m Model) expandDetailRows(body []string, width int, wrap bool) []string {
 	out := make([]string, 0, len(body))
 	for _, line := range body {
-		out = append(out, renderDetailRows(line, width, wrap)...)
+		out = append(out, m.renderDetailRows(line, width, wrap)...)
 	}
 	return out
 }
 
 func renderDetailLine(line string, width int) string {
-	rows := renderDetailRows(line, width, false)
+	var m Model
+	rows := m.renderDetailRows(line, width, false)
 	if len(rows) == 0 {
 		return fitWidth("", width)
 	}
@@ -2846,6 +2875,11 @@ func renderDetailLine(line string, width int) string {
 }
 
 func renderDetailRows(line string, width int, wrap bool) []string {
+	var m Model
+	return m.renderDetailRows(line, width, wrap)
+}
+
+func (m Model) renderDetailRows(line string, width int, wrap bool) []string {
 	// Git diffs from CRLF files keep a trailing \r after Split(..., "\n").
 	// A carriage return mid-row sends the cursor to column 0, so wash padding
 	// then paints over the left pane.
@@ -2860,15 +2894,15 @@ func renderDetailRows(line string, width int, wrap bool) []string {
 		return renderZenHunk(strings.TrimPrefix(line, zenHunkPrefix), width, wrap)
 	case strings.HasPrefix(line, zenCtxPrefix):
 		if num, text, ok := parseZenNumText(strings.TrimPrefix(line, zenCtxPrefix)); ok {
-			return renderZenContext(num, text, width, wrap)
+			return renderZenContextSearch(num, text, width, wrap, m.pickaxeSearchSpans(text))
 		}
 	case strings.HasPrefix(line, zenAddPrefix):
 		if num, text, spans, ok := parseZenChangePayload(strings.TrimPrefix(line, zenAddPrefix)); ok {
-			return renderZenChange(true, num, text, spans, width, wrap)
+			return renderZenChangeSearch(true, num, text, spans, width, wrap, m.pickaxeSearchSpans(text))
 		}
 	case strings.HasPrefix(line, zenDelPrefix):
 		if num, text, spans, ok := parseZenChangePayload(strings.TrimPrefix(line, zenDelPrefix)); ok {
-			return renderZenChange(false, num, text, spans, width, wrap)
+			return renderZenChangeSearch(false, num, text, spans, width, wrap, m.pickaxeSearchSpans(text))
 		}
 	}
 	if strings.Contains(line, "\x1b[") {
@@ -2882,24 +2916,76 @@ func renderDetailRows(line string, width int, wrap bool) []string {
 	switch {
 	case strings.HasPrefix(content, intraAddPrefix):
 		text, spans := parseIntraPayload(strings.TrimPrefix(content, intraAddPrefix))
-		return renderIntraUnified(true, text, spans, width, wrap)
+		return renderIntraUnifiedSearch(true, text, spans, width, wrap, m.pickaxeSearchSpans(text))
 	case strings.HasPrefix(content, intraDelPrefix):
 		text, spans := parseIntraPayload(strings.TrimPrefix(content, intraDelPrefix))
-		return renderIntraUnified(false, text, spans, width, wrap)
+		return renderIntraUnifiedSearch(false, text, spans, width, wrap, m.pickaxeSearchSpans(text))
 	case isDiffFileHeader(content):
 		return renderWrappedCell(styleDiffMeta, content, width, wrap)
 	case strings.HasPrefix(content, "@@"):
 		return renderWrappedCell(styleDiffHunk, content, width, wrap)
 	case strings.HasPrefix(content, "+") && !strings.HasPrefix(content, "+++"):
-		return renderWrappedCell(styleAddWash, content, width, wrap)
+		body := content[1:]
+		search := m.pickaxeSearchSpans(body)
+		if len(search) == 0 {
+			return renderWrappedCell(styleAddWash, content, width, wrap)
+		}
+		shifted := shiftSearchSpans(search, 1)
+		return renderUnifiedSearchLine(styleAddWash, content, shifted, width, wrap)
 	case strings.HasPrefix(content, "-") && !strings.HasPrefix(content, "---"):
-		return renderWrappedCell(styleDelWash, content, width, wrap)
+		body := content[1:]
+		search := m.pickaxeSearchSpans(body)
+		if len(search) == 0 {
+			return renderWrappedCell(styleDelWash, content, width, wrap)
+		}
+		shifted := shiftSearchSpans(search, 1)
+		return renderUnifiedSearchLine(styleDelWash, content, shifted, width, wrap)
 	default:
-		return renderWrappedCell(lipgloss.NewStyle(), content, width, wrap)
+		search := m.pickaxeSearchSpans(content)
+		if len(search) == 0 {
+			return renderWrappedCell(lipgloss.NewStyle(), content, width, wrap)
+		}
+		base := styleSearchWash
+		return renderUnifiedSearchLine(base, content, search, width, wrap)
 	}
 }
 
+func shiftSearchSpans(spans []byteSpan, delta int) []byteSpan {
+	if delta == 0 || len(spans) == 0 {
+		return spans
+	}
+	out := make([]byteSpan, len(spans))
+	for i, sp := range spans {
+		out[i] = byteSpan{Start: sp.Start + delta, End: sp.End + delta}
+	}
+	return out
+}
+
+func renderUnifiedSearchLine(base lipgloss.Style, full string, search []byteSpan, width int, wrap bool) []string {
+	pad := strings.Repeat(" ", cellPad)
+	bodyW := width - 2*cellPad
+	if bodyW < 1 {
+		bodyW = max(1, width-cellPad)
+	}
+	if !wrap {
+		return []string{fitWidth(pad+renderLayeredCell(base, base, styleSearchStrong, full, nil, search, bodyW), width)}
+	}
+	chunks := wrapDisplay(full, bodyW)
+	rows := make([]string, 0, len(chunks))
+	offset := 0
+	for _, c := range chunks {
+		chunkSpans := shiftSpans(search, offset, offset+len(c))
+		rows = append(rows, fitWidth(pad+renderLayeredCell(base, base, styleSearchStrong, c, nil, chunkSpans, bodyW), width))
+		offset += len(c)
+	}
+	return rows
+}
+
 func renderIntraUnified(add bool, text string, spans []byteSpan, width int, wrap bool) []string {
+	return renderIntraUnifiedSearch(add, text, spans, width, wrap, nil)
+}
+
+func renderIntraUnifiedSearch(add bool, text string, spans []byteSpan, width int, wrap bool, search []byteSpan) []string {
 	base, strong := styleDelWash, styleDelStrong
 	prefix := "-"
 	if add {
@@ -2912,20 +2998,22 @@ func renderIntraUnified(add bool, text string, spans []byteSpan, width int, wrap
 	for i, sp := range spans {
 		shifted[i] = byteSpan{Start: sp.Start + 1, End: sp.End + 1}
 	}
+	shiftedSearch := shiftSearchSpans(search, 1)
 	pad := strings.Repeat(" ", cellPad)
 	bodyW := width - 2*cellPad
 	if bodyW < 1 {
 		bodyW = max(1, width-cellPad)
 	}
 	if !wrap {
-		return []string{fitWidth(pad+renderHighlightedCell(base, strong, full, shifted, bodyW), width)}
+		return []string{fitWidth(pad+renderLayeredCell(base, strong, styleSearchStrong, full, shifted, shiftedSearch, bodyW), width)}
 	}
 	chunks := wrapDisplay(full, bodyW)
 	rows := make([]string, 0, len(chunks))
 	offset := 0
 	for _, c := range chunks {
 		chunkSpans := shiftSpans(shifted, offset, offset+len(c))
-		rows = append(rows, fitWidth(pad+renderHighlightedCell(base, strong, c, chunkSpans, bodyW), width))
+		chunkSearch := shiftSpans(shiftedSearch, offset, offset+len(c))
+		rows = append(rows, fitWidth(pad+renderLayeredCell(base, strong, styleSearchStrong, c, chunkSpans, chunkSearch, bodyW), width))
 		offset += len(c)
 	}
 	return rows

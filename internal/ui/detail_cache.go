@@ -28,9 +28,13 @@ func (m Model) detailRenderKey(width int) string {
 		hash = m.detail.Commit.Hash
 		diffLen = len(m.detail.Diff)
 	}
-	return fmt.Sprintf("%s|%s|%d|%d|%t|%d|%t|%d",
+	hl := 0
+	if m.pickaxeHLActive() {
+		hl = 1
+	}
+	return fmt.Sprintf("%s|%s|%d|%d|%t|%d|%t|%d|%d|%s|%d",
 		hash, m.detailPath, m.diffMode, m.zenContext, m.detailWrap, width,
-		m.detailTruncated, diffLen)
+		m.detailTruncated, diffLen, hl, m.pickQuery, m.pickMode)
 }
 
 func (m Model) ensureDetailLogical(width int) []string {
@@ -87,7 +91,7 @@ func (m Model) detailVisualWindow(width, height, offset int) (rows []string, tot
 	end := min(total, offset+height+detailViewOverscan)
 	painted := make([]string, 0, end-start)
 	for _, line := range body[start:end] {
-		painted = append(painted, renderDetailRows(line, width, false)...)
+		painted = append(painted, m.renderDetailRows(line, width, false)...)
 	}
 	rel := offset - start
 	visEnd := min(len(painted), rel+height)
@@ -104,7 +108,7 @@ func (m Model) ensureDetailVisual(width int, body []string) []string {
 	if m.detailCache.visual != nil && m.detailCache.key == m.detailRenderKey(width) {
 		return m.detailCache.visual
 	}
-	visual := expandDetailRows(body, width, true)
+	visual := m.expandDetailRows(body, width, true)
 	m.detailCache.visual = visual
 	return visual
 }

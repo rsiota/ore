@@ -16,6 +16,9 @@ func TestStartPickaxeStagesSearch(t *testing.T) {
 	if !m.loadingPick || m.pickQuery != "UniqueToken" || cmd == nil {
 		t.Fatalf("start: loading=%v query=%q cmd=%v", m.loadingPick, m.pickQuery, cmd)
 	}
+	if !m.pickHlOn {
+		t.Fatal("expected pickaxe highlight on after search")
+	}
 	if m.pickaxeFrom != MainCommits {
 		t.Fatalf("from = %v", m.pickaxeFrom)
 	}

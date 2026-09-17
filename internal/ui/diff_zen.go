@@ -309,29 +309,41 @@ func zenGutterCont() string {
 }
 
 func renderZenContext(num int, text string, width int, wrap bool) []string {
-	return renderZenCode(styleMuted, num, text, width, wrap)
+	return renderZenContextSearch(num, text, width, wrap, nil)
+}
+
+func renderZenContextSearch(num int, text string, width int, wrap bool, search []byteSpan) []string {
+	base := styleMuted
+	if len(search) > 0 {
+		base = styleSearchWash
+	}
+	return renderZenCodeSegments(base, styleMuted, styleSearchStrong, num, text, nil, search, width, wrap)
 }
 
 func renderZenChange(add bool, num int, text string, spans []byteSpan, width int, wrap bool) []string {
+	return renderZenChangeSearch(add, num, text, spans, width, wrap, nil)
+}
+
+func renderZenChangeSearch(add bool, num int, text string, spans []byteSpan, width int, wrap bool, search []byteSpan) []string {
 	base, strong := styleDelWash, styleDelStrong
 	if add {
 		base, strong = styleAddWash, styleAddStrong
 	}
-	return renderZenCodeSegments(base, strong, num, text, spans, width, wrap)
+	return renderZenCodeSegments(base, strong, styleSearchStrong, num, text, spans, search, width, wrap)
 }
 
 func renderZenCode(st lipgloss.Style, num int, text string, width int, wrap bool) []string {
-	return renderZenCodeSegments(st, st, num, text, nil, width, wrap)
+	return renderZenCodeSegments(st, st, st, num, text, nil, nil, width, wrap)
 }
 
-func renderZenCodeSegments(base, strong lipgloss.Style, num int, text string, spans []byteSpan, width int, wrap bool) []string {
+func renderZenCodeSegments(base, intraStrong, searchStrong lipgloss.Style, num int, text string, intra, search []byteSpan, width int, wrap bool) []string {
 	gutter := zenGutter(num)
 	bodyW := width - lipgloss.Width(gutter) - cellPad
 	if bodyW < 1 {
 		bodyW = max(1, width-lipgloss.Width(gutter))
 	}
 	if !wrap {
-		return []string{fitWidth(gutter+renderHighlightedCell(base, strong, text, spans, bodyW), width)}
+		return []string{fitWidth(gutter+renderLayeredCell(base, intraStrong, searchStrong, text, intra, search, bodyW), width)}
 	}
 	chunks := wrapDisplay(text, bodyW)
 	cont := zenGutterCont()
@@ -342,8 +354,9 @@ func renderZenCodeSegments(base, strong lipgloss.Style, num int, text string, sp
 		if i > 0 {
 			g = cont
 		}
-		chunkSpans := shiftSpans(spans, offset, offset+len(c))
-		rows = append(rows, fitWidth(g+renderHighlightedCell(base, strong, c, chunkSpans, bodyW), width))
+		chunkIntra := shiftSpans(intra, offset, offset+len(c))
+		chunkSearch := shiftSpans(search, offset, offset+len(c))
+		rows = append(rows, fitWidth(g+renderLayeredCell(base, intraStrong, searchStrong, c, chunkIntra, chunkSearch, bodyW), width))
 		offset += len(c)
 	}
 	return rows
