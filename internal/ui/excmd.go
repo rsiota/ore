@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/rsiota/ore/internal/config"
+	"github.com/rsiota/ore/internal/git"
 )
 
 func (m *Model) beginEx() {
@@ -115,6 +116,27 @@ func (m *Model) exEvolve() tea.Cmd {
 		return nil
 	}
 	nm, cmd := m.openLineEvolution()
+	*m = nm.(Model)
+	return cmd
+}
+
+func (m *Model) exPickaxe(args []string, mode git.PickaxeMode) tea.Cmd {
+	if len(args) == 0 {
+		if mode == git.PickaxeRegexp {
+			m.status = ":G needs a regexp — :G <pattern>"
+		} else {
+			m.status = ":pickaxe needs a string — :pickaxe <text> or :S <text>"
+		}
+		return nil
+	}
+	query := strings.Join(args, " ")
+	path := ""
+	// Optional trailing -- path (vim-ish): :pickaxe foo -- path/to/file
+	if i := strings.Index(query, " -- "); i >= 0 {
+		path = strings.TrimSpace(query[i+4:])
+		query = strings.TrimSpace(query[:i])
+	}
+	nm, cmd := m.startPickaxe(query, mode, path)
 	*m = nm.(Model)
 	return cmd
 }

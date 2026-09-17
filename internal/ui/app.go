@@ -32,6 +32,7 @@ const (
 	MainHistory
 	MainBlame
 	MainLineEvo
+	MainPickaxe
 )
 
 // Model is the root TUI state.
@@ -94,6 +95,17 @@ type Model struct {
 	loadingEvo    bool
 	evoOriginPath string // blame path when evolution opened (esc restore)
 	evoOriginRev  string
+
+	pickaxe      []git.PickaxeHit
+	pickCursor   int
+	pickOffset   int
+	pickCol      int
+	pickQuery    string
+	pickMode     git.PickaxeMode
+	pickPath     string // optional path limiter used for the search
+	loadingPick  bool
+	pickaxeFrom  MainView // view to restore on esc
+	pickaxeDive  bool     // drilled from pickaxe into history/files/blame
 
 	detail           *git.CommitDetail
 	detailFilterPath string // path requested by the in-flight / latest reloadDetail
@@ -228,6 +240,14 @@ type lineEvoLoadedMsg struct {
 	err   error
 }
 
+type pickaxeLoadedMsg struct {
+	query string
+	mode  git.PickaxeMode
+	path  string
+	hits  []git.PickaxeHit
+	err   error
+}
+
 type relationsLoadedMsg struct {
 	commit *git.CommitRelations
 	line   *git.LineRelations
@@ -290,6 +310,21 @@ func loadLineEvolutionCmd(repo *git.Repo, path, rev string, start git.BlameLine)
 		defer cancel()
 		steps, err := repo.LineEvolution(ctx, path, rev, start, 0)
 		return lineEvoLoadedMsg{path: path, rev: rev, steps: steps, err: err}
+	}
+}
+
+func loadPickaxeCmd(repo *git.Repo, opt git.PickaxeOptions) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		hits, err := repo.Pickaxe(ctx, opt)
+		return pickaxeLoadedMsg{
+			query: opt.Query,
+			mode:  opt.Mode,
+			path:  opt.Path,
+			hits:  hits,
+			err:   err,
+		}
 	}
 }
 
@@ -481,6 +516,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailPath = ""
 		return m, nil
 
+	case pickaxeLoadedMsg:
+		m.loadingPick = false
+		if msg.query != m.pickQuery || msg.mode != m.pickMode {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.status = "error"
+			return m, nil
+		}
+		m.pickaxe = msg.hits
+		m.pickPath = msg.path
+		m.pickCursor = 0
+		m.pickOffset = 0
+		m.pickCol = pickColSubject
+		m.main = MainPickaxe
+		m.focus = FocusMain
+		m.chordG = false
+		m.status = fmt.Sprintf("pickaxe · %s %q · %d hits · enter files · b blame · esc back",
+			pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe))
+		if len(m.pickaxe) > 0 {
+			return m, m.reloadDetail()
+		}
+		m.detail = nil
+		m.detailPath = ""
+		return m, nil
+
 	case relationsLoadedMsg:
 		m.loadingRel = false
 		if msg.err != nil {
@@ -553,6 +615,11 @@ func (m Model) selectedHash() string {
 			return ""
 		}
 		return m.evo[m.evoCursor].Line.Hash
+	case MainPickaxe:
+		if h, ok := m.selectedPickaxeHit(); ok {
+			return h.Commit.Hash
+		}
+		return ""
 	case MainHistory:
 		idx := m.historyIndices()
 		if m.historyCursor < 0 || m.historyCursor >= len(idx) {
@@ -980,11 +1047,29 @@ func (m *Model) refreshStatus() {
 			s := m.evo[m.evoCursor]
 			m.status += fmt.Sprintf(" · #%d %s:%d", s.Index, shortHash(s.Line.Hash), s.Line.Line)
 		}
+	case MainPickaxe:
+		m.status = fmt.Sprintf("pickaxe · %s %q · %d hits", pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 32), len(m.pickaxe))
+		if m.pickPath != "" {
+			m.status += " · " + m.pickPath
+		}
 	}
 }
 
 func (m Model) goBack() (tea.Model, tea.Cmd) {
 	switch m.main {
+	case MainPickaxe:
+		m.pickaxe = nil
+		m.pickCursor = 0
+		m.pickOffset = 0
+		m.pickQuery = ""
+		m.pickaxeDive = false
+		m.main = m.pickaxeFrom
+		if m.main == MainPickaxe {
+			m.main = MainCommits
+		}
+		m.focus = FocusMain
+		m.refreshStatus()
+		return m, m.reloadDetail()
 	case MainLineEvo:
 		m.main = MainBlame
 		m.focus = FocusMain
@@ -999,6 +1084,12 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		if m.blameFrom == MainLineEvo && len(m.evo) > 0 {
 			m.main = MainLineEvo
 			m.status = fmt.Sprintf("evolve · %s · %d steps · enter blame · esc back", m.evoOriginPath, len(m.evo))
+			return m, m.reloadDetail()
+		}
+		if m.blameFrom == MainPickaxe && m.pickQuery != "" {
+			m.main = MainPickaxe
+			m.pickaxeDive = true
+			m.status = fmt.Sprintf("pickaxe · %s %q · %d hits", pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe))
 			return m, m.reloadDetail()
 		}
 		m.evo = nil
@@ -1016,10 +1107,15 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("%d commits", len(m.commits))
 		return m, m.reloadDetail()
 	case MainHistory:
-		m.main = MainFiles
 		m.history = nil
 		m.historyPath = ""
 		m.focus = FocusMain
+		if m.pickaxeDive && len(m.pickaxe) > 0 && m.pickQuery != "" {
+			m.main = MainPickaxe
+			m.status = fmt.Sprintf("pickaxe · %s %q · %d hits", pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe))
+			return m, m.reloadDetail()
+		}
+		m.main = MainFiles
 		if len(m.files) > 0 {
 			m.status = fmt.Sprintf("%d files in %s", len(m.files), shortHash(m.filesCommitHash))
 			return m, m.reloadDetail()
@@ -1028,11 +1124,16 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("%d commits", len(m.commits))
 		return m, m.reloadDetail()
 	case MainFiles:
-		m.main = MainCommits
 		m.files = nil
 		m.filesCommitHash = ""
 		m.openFilesPending = false
 		m.focus = FocusMain
+		if m.pickaxeDive && len(m.pickaxe) > 0 && m.pickQuery != "" {
+			m.main = MainPickaxe
+			m.status = fmt.Sprintf("pickaxe · %s %q · %d hits", pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe))
+			return m, m.reloadDetail()
+		}
+		m.main = MainCommits
 		m.status = fmt.Sprintf("%d commits", len(m.commits))
 		return m, m.reloadDetail()
 	default:
@@ -1078,6 +1179,8 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleBlameKeys(msg)
 	case MainLineEvo:
 		return m.handleEvoKeys(msg)
+	case MainPickaxe:
+		return m.handlePickaxeKeys(msg)
 	}
 	return m, nil
 }
@@ -1118,6 +1221,12 @@ func (m Model) gotoMainTop() (tea.Model, tea.Cmd) {
 		m.evoCursor = 0
 		m.ensureEvoVisible()
 		return m, m.evoReloadIfCommitChanged(prevHash)
+	case MainPickaxe:
+		if len(m.pickaxe) == 0 {
+			return m, nil
+		}
+		m.pickCursor = 0
+		m.ensurePickVisible()
 	}
 	return m, m.reloadDetail()
 }
@@ -1605,6 +1714,137 @@ func (m Model) activateEvolutionStep() (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) startPickaxe(query string, mode git.PickaxeMode, path string) (tea.Model, tea.Cmd) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		m.status = "pickaxe needs a query — :pickaxe <text> or :G <regexp>"
+		return m, nil
+	}
+	from := m.main
+	if from == MainPickaxe {
+		from = m.pickaxeFrom
+	}
+	if from == MainPickaxe {
+		from = MainCommits
+	}
+	m.pickaxeFrom = from
+	m.pickQuery = query
+	m.pickMode = mode
+	m.pickPath = path
+	m.loadingPick = true
+	m.err = ""
+	m.chordG = false
+	m.focus = FocusMain
+	m.status = fmt.Sprintf("pickaxe · searching %s %q…", pickaxeModeLabel(mode), truncateQuery(query, 32))
+	rev := m.viewRev
+	return m, loadPickaxeCmd(m.repo, git.PickaxeOptions{
+		Query: query,
+		Mode:  mode,
+		Path:  path,
+		Rev:   rev,
+	})
+}
+
+func (m Model) handlePickaxeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	n := len(m.pickaxe)
+	switch msg.String() {
+	case "h", "left":
+		if m.pickCol > 0 {
+			m.pickCol--
+		}
+		return m, nil
+	case "l", "right":
+		if m.pickCol < pickColCount-1 {
+			m.pickCol++
+		}
+		return m, nil
+	case "0":
+		m.pickCol = 0
+		return m, nil
+	case "$":
+		m.pickCol = pickColSubject
+		return m, nil
+	}
+	if n == 0 {
+		return m, nil
+	}
+	switch msg.String() {
+	case "j", "down":
+		if m.pickCursor < n-1 {
+			m.pickCursor++
+			m.ensurePickVisible()
+			return m, m.reloadDetail()
+		}
+	case "k", "up":
+		if m.pickCursor > 0 {
+			m.pickCursor--
+			m.ensurePickVisible()
+			return m, m.reloadDetail()
+		}
+	case "home":
+		m.pickCursor = 0
+		m.ensurePickVisible()
+		return m, m.reloadDetail()
+	case "G", "end":
+		m.pickCursor = n - 1
+		m.ensurePickVisible()
+		return m, m.reloadDetail()
+	case "ctrl+d":
+		m.pickCursor = min(n-1, m.pickCursor+m.mainPage())
+		m.ensurePickVisible()
+		return m, m.reloadDetail()
+	case "ctrl+u":
+		m.pickCursor = max(0, m.pickCursor-m.mainPage())
+		m.ensurePickVisible()
+		return m, m.reloadDetail()
+	case "enter":
+		return m.activatePickaxeHit()
+	case "b":
+		return m.blamePickaxeHit()
+	}
+	return m, nil
+}
+
+func (m Model) activatePickaxeHit() (tea.Model, tea.Cmd) {
+	h, ok := m.selectedPickaxeHit()
+	if !ok {
+		return m, nil
+	}
+	m.pickaxeDive = true
+	// Prefer diving into the hit's primary path history when we know it.
+	if len(h.Paths) == 1 {
+		path := h.Paths[0]
+		m.historyPath = path
+		m.loadingHistory = true
+		m.focus = FocusMain
+		m.status = fmt.Sprintf("loading history · %s", path)
+		return m, loadHistoryCmd(m.repo, path)
+	}
+	m.openFilesPending = true
+	m.status = "opening files…"
+	m.detailFilterPath = ""
+	m.loadingDetail = true
+	m.detailOffset = 0
+	return m, m.reloadDetailNow()
+}
+
+func (m Model) blamePickaxeHit() (tea.Model, tea.Cmd) {
+	h, ok := m.selectedPickaxeHit()
+	if !ok {
+		return m, nil
+	}
+	path := ""
+	if len(h.Paths) > 0 {
+		path = h.Paths[0]
+	}
+	if path == "" {
+		m.status = "no path on this hit — enter files first"
+		return m, nil
+	}
+	m.pickaxeDive = true
+	return m, m.startBlame(path, h.Commit.Hash, MainPickaxe)
+}
+
 // blameReloadIfCommitChanged skips a detail fetch when the cursor stays on the
 // same blamed commit (line chrome updates from the live cursor).
 func (m *Model) blameReloadIfCommitChanged(prevHash string) tea.Cmd {
@@ -2034,6 +2274,9 @@ func (m *Model) clampMainCursor() {
 	case MainLineEvo:
 		m.evoCursor = min(m.evoCursor, max(0, len(m.evo)-1))
 		m.ensureEvoVisible()
+	case MainPickaxe:
+		m.pickCursor = min(m.pickCursor, max(0, len(m.pickaxe)-1))
+		m.ensurePickVisible()
 	}
 }
 
@@ -2108,7 +2351,7 @@ func (m Model) renderStatus() string {
 	// Detail reloads on every j/k; treating them as "busy" hides the right-hand
 	// key hints and makes the status bar flicker. Keep hints stable — the detail
 	// pane already holds the previous patch until the new one is ready.
-	busy := m.loading || m.loadingHistory || m.loadingBlame || m.loadingRel || m.loadingEvo
+	busy := m.loading || m.loadingHistory || m.loadingBlame || m.loadingRel || m.loadingEvo || m.loadingPick
 
 	var hints string
 	switch {
@@ -2222,6 +2465,8 @@ func (m Model) renderMainPane(width, height int) string {
 		return m.renderBlamePane(width, height)
 	case MainLineEvo:
 		return m.renderEvolutionPane(width, height)
+	case MainPickaxe:
+		return m.renderPickaxePane(width, height)
 	default:
 		return m.renderCommitPane(width, height)
 	}
@@ -2237,6 +2482,8 @@ func (m Model) mainTitle() string {
 		return "blame"
 	case MainLineEvo:
 		return "evolve"
+	case MainPickaxe:
+		return "pickaxe"
 	default:
 		return "commits"
 	}

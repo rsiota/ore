@@ -101,6 +101,11 @@ func (m *Model) detailPathForView() string {
 			return m.evo[m.evoCursor].Path
 		}
 		return m.evoOriginPath
+	case MainPickaxe:
+		if h, ok := m.selectedPickaxeHit(); ok && len(h.Paths) > 0 {
+			return h.Paths[0]
+		}
+		return m.pickPath
 	}
 	return ""
 }

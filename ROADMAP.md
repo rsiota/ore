@@ -98,6 +98,7 @@ Analogous to creel’s FK explorer:
 - [ ] Linked issues/PRs if parsed (thin message/body parse → jumpable edges)
 - [x] Co-changed file hot spots (`Often with` in `g r`)
 - [ ] Co-change depth — intersecting commits for a hot-spot path; filterable coupling grid
+- [x] Pickaxe / content-history search (`:pickaxe` / `:S` string, `:G` regexp)
 
 ### Wave 4 — Polish & power
 
@@ -115,7 +116,7 @@ Analogous to creel’s FK explorer:
 North star: make **line → previous versions → co-changed regions → authors** feel as fluid as creel’s FK walk. Stay archaeology-only.
 
 1. [x] **Line evolution stack** — from a blame line, walk porcelain `previous` into a scannable grid (`F`); Enter opens blame at that step; `f` stays one-hop
-2. [ ] **Pickaxe / content-history search** — `git log -S` / `-G` → results grid → blame / follow (`:pickaxe` / `/` mode)
+2. [x] **Pickaxe / content-history search** — `git log -S` / `-G` → results grid → blame / follow (`:pickaxe` / `:S` / `:G`)
 3. [ ] **Co-change → intersecting commits** — from Often-with (or a path pair), list commits where they co-occur
 4. [ ] **Rename / move edges everywhere** — “was X” / “moved from Y” in history, blame, and `g r` (not only `--follow`)
 5. [ ] **Bookmarks or detail hunk-walk** — palate cleanser after the graph work (`]`/`[` hunks; named views)

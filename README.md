@@ -25,6 +25,8 @@ Commit grid is columnar (sort + column-scoped `/`). Ex commands (`:blame`, `:his
 | Command | Action |
 |---------|--------|
 | `:blame <path> [rev]` | Open blame (rev defaults to selection / HEAD) |
+| `:pickaxe <text>` / `:S <text>` | Commits that added/removed a string (`git log -S`) |
+| `:G <regexp>` | Commits matching a regexp pickaxe (`git log -G`) |
 | `:evolve` | Line evolution stack for the selected blame line (`F`) |
 | `:history <path>` | Path history with rename follow |
 | `:goto <hash>` | Jump to commit (prefix match) |

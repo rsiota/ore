@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/rsiota/ore/internal/git"
 )
 
 // exCmdSpec is one ":" command. exCommands() is the source of truth for
@@ -31,6 +32,22 @@ func exCommands() []exCmdSpec {
 			usage: ":history <path>",
 			run: func(m *Model, args []string) tea.Cmd {
 				return m.exHistory(args)
+			},
+		},
+		{
+			verbs: []string{"pickaxe", "pick", "S"},
+			desc:  "search history for commits that added/removed a string (-S)",
+			usage: ":pickaxe <string>  |  :S <string>",
+			run: func(m *Model, args []string) tea.Cmd {
+				return m.exPickaxe(args, git.PickaxeString)
+			},
+		},
+		{
+			verbs: []string{"G", "regexp", "regex"},
+			desc:  "search history for commits matching a regexp pickaxe (-G)",
+			usage: ":G <regexp>",
+			run: func(m *Model, args []string) tea.Cmd {
+				return m.exPickaxe(args, git.PickaxeRegexp)
 			},
 		},
 		{

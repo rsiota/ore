@@ -59,6 +59,11 @@ func (m Model) snapshotSession() session.State {
 			st.BlameLine = m.evo[0].Line.Line
 		}
 		st.BlameFrom = "files"
+	case MainPickaxe:
+		st.Main = "commits"
+		if h, ok := m.selectedPickaxeHit(); ok {
+			st.Commit = h.Commit.Hash
+		}
 	}
 	return st
 }

@@ -115,6 +115,17 @@ func registry() []Section {
 			},
 		},
 		{
+			Title: "Pickaxe",
+			Items: []Binding{
+				{":pickaxe / :S", []string{":"}, "commits that added/removed a string", ""},
+				{":G", []string{":"}, "commits matching a regexp pickaxe", ""},
+				{"j/k", []string{"j", "k"}, "move in pickaxe results", "j/k"},
+				{"enter", []string{"enter"}, "open path history (or files)", "enter"},
+				{"b", []string{"b"}, "blame hit path at commit", "b"},
+				{"esc", []string{"esc"}, "leave pickaxe results", "esc"},
+			},
+		},
+		{
 			Title: "Views",
 			Items: []Binding{
 				{"commits", nil, "repository log (start)", ""},
@@ -122,6 +133,7 @@ func registry() []Section {
 				{"history", nil, "git log --follow for a path", ""},
 				{"blame", nil, "line archaeology grid", ""},
 				{"evolve", nil, "line provenance stack from blame (F)", ""},
+				{"pickaxe", nil, "content history search (:pickaxe / :G)", ""},
 			},
 		},
 		{
@@ -170,6 +182,8 @@ func statusHintList(main MainView, explorerOpen bool) []string {
 		return append([]string{"j/k"}, append(hintsForSection("Blame"), "gb", "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainLineEvo:
 		return append([]string{"j/k"}, append(hintsForSection("Line evolution"), "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+	case MainPickaxe:
+		return append([]string{"j/k"}, append(hintsForSection("Pickaxe"), "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	default:
 		return []string{"j/k", "enter", "tab", "D", "w", "ctrl+p", "?", "esc", "q"}
 	}
