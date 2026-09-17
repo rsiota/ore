@@ -91,6 +91,9 @@ func TestRelExplorerHotSpots(t *testing.T) {
 	if !hot.selectable || hot.count != 5 {
 		t.Fatalf("hot spot = %#v", hot)
 	}
+	if len(hot.coupleWith) != 1 || hot.coupleWith[0] != "a.go" {
+		t.Fatalf("coupleWith = %#v, want [a.go]", hot.coupleWith)
+	}
 	got := renderRelNode(hot)
 	if !strings.Contains(got, "  5  b.go") {
 		t.Fatalf("leading count render = %q", got)

@@ -35,6 +35,14 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"couple", "cochange", "cocurrent"},
+			desc:  "list commits where two paths co-occur (Often-with drill)",
+			usage: ":couple <seed> <partner>",
+			run: func(m *Model, args []string) tea.Cmd {
+				return m.exCouple(args)
+			},
+		},
+		{
 			verbs: []string{"nohl", "nohls", "hlclear", "clearhl"},
 			desc:  "turn off pickaxe match highlighting (keeps results)",
 			usage: ":nohl",

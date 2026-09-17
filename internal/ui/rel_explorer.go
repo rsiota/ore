@@ -28,7 +28,8 @@ type relNode struct {
 	label      string
 	hash       string
 	path       string
-	count      int // co-change hits; leading column when kind == relHotSpot
+	count      int      // co-change hits; leading column when kind == relHotSpot
+	coupleWith []string // seed paths to intersect with path (Often-with drill)
 	selectable bool
 	expandable bool
 	expanded   bool
@@ -132,7 +133,7 @@ func buildLineRoot(rel git.LineRelations, e *RelExplorer) []*relNode {
 		kind: relFile, depth: 1, selectable: true,
 		path: rel.Path, hash: rel.Rev, label: rel.Path,
 	})
-	roots = append(roots, hotSpotNodes(rel.HotSpots, 0, nil, rel.Rev)...)
+	roots = append(roots, hotSpotNodes(rel.HotSpots, 0, nil, rel.Rev, []string{rel.Path})...)
 	return roots
 }
 
@@ -168,15 +169,27 @@ func commitRelationBlocks(rel git.CommitRelations, depth int, parent *relNode, e
 			path: f.Path, hash: rel.Hash, label: path,
 		})
 	}
-	out = append(out, hotSpotNodes(rel.HotSpots, depth, parent, rel.Hash)...)
+	out = append(out, hotSpotNodes(rel.HotSpots, depth, parent, rel.Hash, seedPathsFromFiles(rel.Files))...)
 	return out
 }
 
+func seedPathsFromFiles(files []git.FileChange) []string {
+	var seeds []string
+	for _, f := range files {
+		seeds = append(seeds, f.Path)
+		if f.OldPath != "" {
+			seeds = append(seeds, f.OldPath)
+		}
+	}
+	return seeds
+}
+
 // hotSpotNodes builds the "Often with" section for co-changed paths.
-func hotSpotNodes(hot []git.CoChange, depth int, parent *relNode, rev string) []*relNode {
+func hotSpotNodes(hot []git.CoChange, depth int, parent *relNode, rev string, seeds []string) []*relNode {
 	if len(hot) == 0 {
 		return nil
 	}
+	seeds = append([]string(nil), seeds...)
 	var out []*relNode
 	out = append(out, &relNode{
 		kind: relSection, depth: depth, parent: parent,
@@ -186,6 +199,7 @@ func hotSpotNodes(hot []git.CoChange, depth int, parent *relNode, rev string) []
 		out = append(out, &relNode{
 			kind: relHotSpot, depth: depth + 1, parent: parent, selectable: true,
 			path: h.Path, hash: rev, count: h.Count, label: h.Path,
+			coupleWith: seeds,
 		})
 	}
 	return out

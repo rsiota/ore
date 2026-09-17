@@ -141,6 +141,18 @@ func (m *Model) exPickaxe(args []string, mode git.PickaxeMode) tea.Cmd {
 	return cmd
 }
 
+func (m *Model) exCouple(args []string) tea.Cmd {
+	if len(args) < 2 {
+		m.status = ":couple needs two paths — :couple <seed> <partner>"
+		return nil
+	}
+	partner := args[len(args)-1]
+	seeds := args[:len(args)-1]
+	nm, cmd := m.startCouple(seeds, partner)
+	*m = nm.(Model)
+	return cmd
+}
+
 func (m *Model) exTheme(args []string) tea.Cmd {
 	if len(args) == 0 {
 		m.status = fmt.Sprintf("theme %s — :theme light|dark", m.theme)

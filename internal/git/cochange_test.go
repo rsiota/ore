@@ -104,4 +104,26 @@ func TestCoChangedFilesRanksPartners(t *testing.T) {
 	if rel.HotSpots[0].Path != "b.go" {
 		t.Fatalf("Relations HotSpots = %#v", rel.HotSpots)
 	}
+
+	hits, err := repo.CoChangeCommits(ctx, []string{"a.go"}, "b.go", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) < 3 {
+		t.Fatalf("couple hits = %d, want >= 3: %#v", len(hits), hits)
+	}
+	for _, h := range hits {
+		hasA, hasB := false, false
+		for _, p := range h.Paths {
+			if p == "a.go" {
+				hasA = true
+			}
+			if p == "b.go" {
+				hasB = true
+			}
+		}
+		if !hasA || !hasB {
+			t.Fatalf("hit paths = %#v, want a.go and b.go", h.Paths)
+		}
+	}
 }

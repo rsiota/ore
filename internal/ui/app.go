@@ -103,10 +103,13 @@ type Model struct {
 	pickQuery    string
 	pickMode     git.PickaxeMode
 	pickPath     string // optional path limiter used for the search
+	pickKind     hitListKind
 	loadingPick  bool
 	pickaxeFrom  MainView // view to restore on esc
 	pickaxeDive  bool     // drilled from pickaxe into history/files/blame
 	pickHlOn     bool     // wash matching spans in detail/blame
+	coupleSeeds  []string // seeds for an Often-with couple drill
+	couplePartner string
 
 	detail           *git.CommitDetail
 	detailFilterPath string // path requested by the in-flight / latest reloadDetail
@@ -249,6 +252,14 @@ type pickaxeLoadedMsg struct {
 	err   error
 }
 
+type coupleLoadedMsg struct {
+	seeds   []string
+	partner string
+	label   string
+	hits    []git.PickaxeHit
+	err     error
+}
+
 type relationsLoadedMsg struct {
 	commit *git.CommitRelations
 	line   *git.LineRelations
@@ -325,6 +336,21 @@ func loadPickaxeCmd(repo *git.Repo, opt git.PickaxeOptions) tea.Cmd {
 			path:  opt.Path,
 			hits:  hits,
 			err:   err,
+		}
+	}
+}
+
+func loadCoupleCmd(repo *git.Repo, seeds []string, partner string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		hits, err := repo.CoChangeCommits(ctx, seeds, partner, 0)
+		return coupleLoadedMsg{
+			seeds:   seeds,
+			partner: partner,
+			label:   formatCoupleLabel(seeds, partner),
+			hits:    hits,
+			err:     err,
 		}
 	}
 }
@@ -519,7 +545,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case pickaxeLoadedMsg:
 		m.loadingPick = false
-		if msg.query != m.pickQuery || msg.mode != m.pickMode {
+		if msg.query != m.pickQuery || msg.mode != m.pickMode || m.pickKind != hitListPickaxe {
 			return m, nil
 		}
 		if msg.err != nil {
@@ -540,6 +566,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.pickHlOn {
 			m.status += " · hl on"
 		}
+		if len(m.pickaxe) > 0 {
+			return m, m.reloadDetail()
+		}
+		m.detail = nil
+		m.detailPath = ""
+		return m, nil
+
+	case coupleLoadedMsg:
+		m.loadingPick = false
+		if m.pickKind != hitListCouple || msg.partner != m.couplePartner {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.status = "error"
+			return m, nil
+		}
+		m.pickaxe = msg.hits
+		m.pickQuery = msg.label
+		m.coupleSeeds = msg.seeds
+		m.couplePartner = msg.partner
+		m.pickPath = msg.partner
+		m.pickCursor = 0
+		m.pickOffset = 0
+		m.pickCol = pickColSubject
+		m.pickHlOn = false
+		m.main = MainPickaxe
+		m.focus = FocusMain
+		m.chordG = false
+		m.status = fmt.Sprintf("couple · %s · %d commits · enter · b blame · esc back",
+			truncateQuery(msg.label, 40), len(m.pickaxe))
 		if len(m.pickaxe) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -875,7 +932,7 @@ func (m Model) activateRelation() (tea.Model, tea.Cmd) {
 		m.loadingDetail = true
 		m.main = MainCommits
 		return m, m.reloadDetailNow()
-	case relFile, relHotSpot:
+	case relFile:
 		path := row.path
 		m.explorer.Close()
 		m.focus = FocusMain
@@ -883,6 +940,10 @@ func (m Model) activateRelation() (tea.Model, tea.Cmd) {
 		m.loadingHistory = true
 		m.status = fmt.Sprintf("loading history · %s", path)
 		return m, loadHistoryCmd(m.repo, path)
+	case relHotSpot:
+		m.explorer.Close()
+		m.focus = FocusMain
+		return m.startCouple(row.coupleWith, row.path)
 	default:
 		return m, nil
 	}
@@ -1052,12 +1113,9 @@ func (m *Model) refreshStatus() {
 			m.status += fmt.Sprintf(" · #%d %s:%d", s.Index, shortHash(s.Line.Hash), s.Line.Line)
 		}
 	case MainPickaxe:
-		m.status = fmt.Sprintf("pickaxe · %s %q · %d hits", pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 32), len(m.pickaxe))
-		if m.pickPath != "" {
+		m.status = m.hitListShortStatus()
+		if m.pickKind == hitListPickaxe && m.pickPath != "" {
 			m.status += " · " + m.pickPath
-		}
-		if m.pickHlOn {
-			m.status += " · hl · :nohl"
 		}
 	}
 }
@@ -1069,6 +1127,9 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		m.pickCursor = 0
 		m.pickOffset = 0
 		m.pickQuery = ""
+		m.pickKind = hitListPickaxe
+		m.coupleSeeds = nil
+		m.couplePartner = ""
 		m.pickaxeDive = false
 		m.pickHlOn = false
 		m.invalidateDetailCache()
@@ -1098,7 +1159,7 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		if m.blameFrom == MainPickaxe && m.pickQuery != "" {
 			m.main = MainPickaxe
 			m.pickaxeDive = true
-			m.status = fmt.Sprintf("pickaxe · %s %q · %d hits", pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe))
+			m.status = m.hitListShortStatus()
 			return m, m.reloadDetail()
 		}
 		m.evo = nil
@@ -1121,7 +1182,7 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		m.focus = FocusMain
 		if m.pickaxeDive && len(m.pickaxe) > 0 && m.pickQuery != "" {
 			m.main = MainPickaxe
-			m.status = fmt.Sprintf("pickaxe · %s %q · %d hits", pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe))
+			m.status = m.hitListShortStatus()
 			return m, m.reloadDetail()
 		}
 		m.main = MainFiles
@@ -1139,7 +1200,7 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		m.focus = FocusMain
 		if m.pickaxeDive && len(m.pickaxe) > 0 && m.pickQuery != "" {
 			m.main = MainPickaxe
-			m.status = fmt.Sprintf("pickaxe · %s %q · %d hits", pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe))
+			m.status = m.hitListShortStatus()
 			return m, m.reloadDetail()
 		}
 		m.main = MainCommits
@@ -1737,6 +1798,7 @@ func (m Model) startPickaxe(query string, mode git.PickaxeMode, path string) (te
 		from = MainCommits
 	}
 	m.pickaxeFrom = from
+	m.pickKind = hitListPickaxe
 	m.pickQuery = query
 	m.pickMode = mode
 	m.pickPath = path
@@ -1754,6 +1816,40 @@ func (m Model) startPickaxe(query string, mode git.PickaxeMode, path string) (te
 		Path:  path,
 		Rev:   rev,
 	})
+}
+
+func (m Model) startCouple(seeds []string, partner string) (tea.Model, tea.Cmd) {
+	partner = strings.TrimSpace(partner)
+	seeds = append([]string(nil), seeds...)
+	if partner == "" {
+		m.status = "couple needs a partner path"
+		return m, nil
+	}
+	if len(seeds) == 0 {
+		m.status = "couple needs a seed path"
+		return m, nil
+	}
+	from := m.main
+	if from == MainPickaxe {
+		from = m.pickaxeFrom
+	}
+	if from == MainPickaxe {
+		from = MainCommits
+	}
+	m.pickaxeFrom = from
+	m.pickKind = hitListCouple
+	m.coupleSeeds = seeds
+	m.couplePartner = partner
+	m.pickQuery = formatCoupleLabel(seeds, partner)
+	m.pickPath = partner
+	m.pickHlOn = false
+	m.loadingPick = true
+	m.err = ""
+	m.chordG = false
+	m.focus = FocusMain
+	m.invalidateDetailCache()
+	m.status = fmt.Sprintf("couple · searching %s…", truncateQuery(m.pickQuery, 40))
+	return m, loadCoupleCmd(m.repo, seeds, partner)
 }
 
 func (m Model) handlePickaxeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -2494,6 +2590,9 @@ func (m Model) mainTitle() string {
 	case MainLineEvo:
 		return "evolve"
 	case MainPickaxe:
+		if m.pickKind == hitListCouple {
+			return "couple"
+		}
 		return "pickaxe"
 	default:
 		return "commits"

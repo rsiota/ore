@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,7 +20,133 @@ const (
 	coChangeSample   = 80 // max commits to sample
 	coChangeTop      = 12 // max hot spots returned
 	coChangeMaxSeeds = 20 // cap seeds when a commit touches many files
+	coChangeCommitCap = 80 // max intersecting commits returned
 )
+
+// CoChangeCommits returns commits where partner co-occurs with at least one
+// seed path (newest-first). Used to drill from an Often-with hot spot into the
+// coupling history.
+func (r *Repo) CoChangeCommits(ctx context.Context, seeds []string, partner string, maxCount int) ([]PickaxeHit, error) {
+	partner = strings.TrimSpace(partner)
+	seeds = uniquePaths(seeds)
+	if partner == "" {
+		return nil, fmt.Errorf("partner path required")
+	}
+	// Drop partner if it was included in seeds.
+	filtered := seeds[:0]
+	for _, s := range seeds {
+		if s != partner {
+			filtered = append(filtered, s)
+		}
+	}
+	seeds = filtered
+	if len(seeds) == 0 {
+		return nil, fmt.Errorf("seed path required")
+	}
+	if len(seeds) > coChangeMaxSeeds {
+		seeds = seeds[:coChangeMaxSeeds]
+	}
+	if maxCount <= 0 {
+		maxCount = coChangeCommitCap
+	}
+
+	seedSet := make(map[string]struct{}, len(seeds))
+	for _, s := range seeds {
+		seedSet[s] = struct{}{}
+	}
+
+	// Candidates: recent commits that touched the partner (then require a seed).
+	listArgs := []string{"rev-list", "--all", "-n", strconv.Itoa(maxCount * 3), "--", partner}
+	listOut, err := r.run(ctx, listArgs...)
+	if err != nil {
+		return nil, err
+	}
+	var hashes []string
+	for _, line := range strings.Split(strings.TrimSpace(string(listOut)), "\n") {
+		h := strings.TrimSpace(line)
+		if h != "" {
+			hashes = append(hashes, h)
+		}
+	}
+	if len(hashes) == 0 {
+		return nil, nil
+	}
+
+	showArgs := append([]string{
+		"show", "--name-only", "--pretty=format:" + recSep + "%H",
+	}, hashes...)
+	out, err := r.run(ctx, showArgs...)
+	if err != nil {
+		return nil, err
+	}
+
+	var matched []string
+	matchedPaths := map[string][]string{} // hash → intersection paths present
+	for _, block := range strings.Split(string(out), recSep) {
+		block = strings.TrimSpace(block)
+		if block == "" {
+			continue
+		}
+		lines := strings.Split(block, "\n")
+		hash := strings.TrimSpace(lines[0])
+		if hash == "" {
+			continue
+		}
+		hasPartner := false
+		var hitPaths []string
+		seenHit := map[string]struct{}{}
+		for _, line := range lines[1:] {
+			p := strings.TrimSpace(line)
+			if p == "" {
+				continue
+			}
+			if p == partner {
+				hasPartner = true
+				if _, ok := seenHit[p]; !ok {
+					seenHit[p] = struct{}{}
+					hitPaths = append(hitPaths, p)
+				}
+			}
+			if _, ok := seedSet[p]; ok {
+				if _, dup := seenHit[p]; !dup {
+					seenHit[p] = struct{}{}
+					hitPaths = append(hitPaths, p)
+				}
+			}
+		}
+		if !hasPartner {
+			continue
+		}
+		hasSeed := false
+		for _, p := range hitPaths {
+			if _, ok := seedSet[p]; ok {
+				hasSeed = true
+				break
+			}
+		}
+		if !hasSeed {
+			continue
+		}
+		matched = append(matched, hash)
+		matchedPaths[hash] = hitPaths
+		if len(matched) >= maxCount {
+			break
+		}
+	}
+	if len(matched) == 0 {
+		return nil, nil
+	}
+
+	hits := make([]PickaxeHit, 0, len(matched))
+	for _, h := range matched {
+		c, err := r.commitSummary(ctx, h)
+		if err != nil {
+			continue
+		}
+		hits = append(hits, PickaxeHit{Commit: c, Paths: matchedPaths[h]})
+	}
+	return hits, nil
+}
 
 // CoChangedFiles ranks paths that co-occur with seeds across recent history.
 // excludeHash, when set, skips that commit (typically the seed commit itself so

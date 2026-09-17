@@ -109,7 +109,7 @@ func registry() []Section {
 				{"j/k", []string{"j", "k"}, "move in explorer", "j/k"},
 				{"l", []string{"l"}, "expand commit / dive into nested", "l"},
 				{"h", []string{"h"}, "collapse nested / close explorer", "h"},
-				{"enter", []string{"enter"}, "jump to commit or file history", "enter"},
+				{"enter", []string{"enter"}, "jump to commit, file history, or Often-with couple", "enter"},
 				{"esc", []string{"esc"}, "close explorer", "esc"},
 				{"tab", []string{"tab"}, "focus main ↔ explorer", "tab"},
 			},
@@ -119,11 +119,12 @@ func registry() []Section {
 			Items: []Binding{
 				{":pickaxe / :S", []string{":"}, "commits that added/removed a string", ""},
 				{":G", []string{":"}, "commits matching a regexp pickaxe", ""},
+				{":couple", []string{":"}, "commits where two paths co-occur", ""},
 				{":nohl", []string{":"}, "clear pickaxe match washes", ""},
-				{"j/k", []string{"j", "k"}, "move in pickaxe results", "j/k"},
+				{"j/k", []string{"j", "k"}, "move in pickaxe/couple results", "j/k"},
 				{"enter", []string{"enter"}, "open path history (or files)", "enter"},
 				{"b", []string{"b"}, "blame hit path at commit", "b"},
-				{"esc", []string{"esc"}, "leave pickaxe results", "esc"},
+				{"esc", []string{"esc"}, "leave results", "esc"},
 			},
 		},
 		{
@@ -135,6 +136,7 @@ func registry() []Section {
 				{"blame", nil, "line archaeology grid", ""},
 				{"evolve", nil, "line provenance stack from blame (F)", ""},
 				{"pickaxe", nil, "content history search (:pickaxe / :G)", ""},
+				{"couple", nil, "co-change intersecting commits (Often-with / :couple)", ""},
 			},
 		},
 		{

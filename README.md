@@ -25,6 +25,7 @@ Commit grid is columnar (sort + column-scoped `/`). Ex commands (`:blame`, `:his
 | Command | Action |
 |---------|--------|
 | `:blame <path> [rev]` | Open blame (rev defaults to selection / HEAD) |
+| `:couple <seed> <partner>` | Commits where paths co-occur (Often-with drill) |
 | `:pickaxe <text>` / `:S <text>` | Commits that added/removed a string (`git log -S`); matches wash in detail/blame |
 | `:G <regexp>` | Commits matching a regexp pickaxe (`git log -G`) |
 | `:nohl` | Clear pickaxe match highlighting (keeps the results grid) |

@@ -97,7 +97,7 @@ Analogous to creel’s FK explorer:
 - [x] Lazy nested expand / deeper graph walk (`l` expand, `h` collapse)
 - [ ] Linked issues/PRs if parsed (thin message/body parse → jumpable edges)
 - [x] Co-changed file hot spots (`Often with` in `g r`)
-- [ ] Co-change depth — intersecting commits for a hot-spot path; filterable coupling grid
+- [x] Co-change → intersecting commits (`Enter` on Often-with / `:couple`)
 - [x] Pickaxe / content-history search (`:pickaxe` / `:S` string, `:G` regexp)
 
 ### Wave 4 — Polish & power
@@ -105,6 +105,7 @@ Analogous to creel’s FK explorer:
 - [ ] Timeline / churn strip
 - [x] Session restore (repo + view + file + commit)
 - [ ] Bookmarks / named views (commits, files, blame lines, filters)
+- [ ] Readonly code yank browser (detail-first; see Next up #6)
 - [ ] Charts (`M` / `:bar` churn, author frequency) — optional
 - [ ] AI assist (optional, creel `Ctrl+F` shape): explain evolution, summarize range
 - [ ] Packaging (GoReleaser, brew/scoop/AUR) when ready to publish
@@ -117,9 +118,10 @@ North star: make **line → previous versions → co-changed regions → authors
 
 1. [x] **Line evolution stack** — from a blame line, walk porcelain `previous` into a scannable grid (`F`); Enter opens blame at that step; `f` stays one-hop
 2. [x] **Pickaxe / content-history search** — `git log -S` / `-G` → results grid → blame / follow (`:pickaxe` / `:S` / `:G`)
-3. [ ] **Co-change → intersecting commits** — from Often-with (or a path pair), list commits where they co-occur
+3. [x] **Co-change → intersecting commits** — from Often-with (or `:couple`), list commits where paths co-occur
 4. [ ] **Rename / move edges everywhere** — “was X” / “moved from Y” in history, blame, and `g r` (not only `--follow`)
 5. [ ] **Bookmarks or detail hunk-walk** — palate cleanser after the graph work (`]`/`[` hunks; named views)
+6. [ ] **Readonly code yank browser** — thin vim-like nav in panes that show code (start with **detail**): motions (`hjkl`, `w/b/e`, `0/$`, `gg/G`, optional `f/t` + pane-local `/`), visual char/line (`v`/`V`), `y`/`Y` to clipboard; visible block cursor; clear enter/exit so it doesn’t fight grid keys (`esc` leaves). No insert, no mutating operators, no creel-scale vim engine. Blame code column only after detail proves the focus model.
 
 Later (when the above feels sticky): hunk-centric mode, soft DAG jumps (parent/child/merge-base), timeline strip, quiet ownership summary in `g r`, export provenance trail, large-repo caching. Keep AI/charts/PR links optional and thin.
 

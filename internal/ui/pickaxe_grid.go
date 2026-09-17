@@ -107,3 +107,36 @@ func truncateQuery(q string, max int) string {
 	}
 	return string(r[:max-1]) + "…"
 }
+
+type hitListKind int
+
+const (
+	hitListPickaxe hitListKind = iota
+	hitListCouple
+)
+
+func formatCoupleLabel(seeds []string, partner string) string {
+	seed := ""
+	if len(seeds) == 1 {
+		seed = seeds[0]
+	} else if len(seeds) > 1 {
+		seed = seeds[0] + "…"
+	}
+	if seed == "" {
+		return partner
+	}
+	return seed + " ∩ " + partner
+}
+
+func (m Model) hitListShortStatus() string {
+	label := truncateQuery(m.pickQuery, 32)
+	n := len(m.pickaxe)
+	if m.pickKind == hitListCouple {
+		return fmt.Sprintf("couple · %s · %d commits", label, n)
+	}
+	s := fmt.Sprintf("pickaxe · %s %q · %d hits", pickaxeModeLabel(m.pickMode), label, n)
+	if m.pickHlOn {
+		s += " · hl · :nohl"
+	}
+	return s
+}
