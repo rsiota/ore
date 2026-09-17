@@ -52,6 +52,8 @@ func (m Model) hintSectionTitles() []string {
 		return []string{"History grid", "Navigation", "Global"}
 	case MainBlame:
 		return []string{"Blame", "Navigation", "Global"}
+	case MainLineEvo:
+		return []string{"Line evolution", "Navigation", "Global"}
 	default:
 		return []string{"Navigation", "Global"}
 	}

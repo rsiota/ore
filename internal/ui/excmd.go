@@ -109,6 +109,16 @@ func (m *Model) exHistory(args []string) tea.Cmd {
 	return loadHistoryCmd(m.repo, path)
 }
 
+func (m *Model) exEvolve() tea.Cmd {
+	if m.main != MainBlame {
+		m.status = ":evolve needs the blame grid — open blame first"
+		return nil
+	}
+	nm, cmd := m.openLineEvolution()
+	*m = nm.(Model)
+	return cmd
+}
+
 func (m *Model) exTheme(args []string) tea.Cmd {
 	if len(args) == 0 {
 		m.status = fmt.Sprintf("theme %s — :theme light|dark", m.theme)

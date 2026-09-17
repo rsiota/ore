@@ -85,6 +85,7 @@ Files: `cmd/ore`, `internal/git`, `internal/ui`, `internal/config`, `internal/ve
 - [x] `:blame path` ex-command (and `:history`, `:goto`)
 - [x] Author colouring (quiet hue on author column only; code stays age-washed)
 - [ ] Collapse/expand logical blocks (later)
+- [x] **Line evolution stack** — navigable provenance of a blame line across renames (`F` / `:evolve`); multi-step follow, not only one-hop `f`
 
 ### Wave 3 — Relationship explorer (`g r`) ✅ (started)
 
@@ -94,16 +95,32 @@ Analogous to creel’s FK explorer:
 - [x] From **blame line**: this commit, previous, file history, file
 - [x] Docked right pane; `j/k`, `Enter` to jump, `esc`/`h` to close, `Tab` focus
 - [x] Lazy nested expand / deeper graph walk (`l` expand, `h` collapse)
-- [ ] Linked issues/PRs if parsed
+- [ ] Linked issues/PRs if parsed (thin message/body parse → jumpable edges)
 - [x] Co-changed file hot spots (`Often with` in `g r`)
+- [ ] Co-change depth — intersecting commits for a hot-spot path; filterable coupling grid
+
 ### Wave 4 — Polish & power
 
 - [ ] Timeline / churn strip
 - [x] Session restore (repo + view + file + commit)
-- [ ] Bookmarks, authors view, search results sidebar
+- [ ] Bookmarks / named views (commits, files, blame lines, filters)
 - [ ] Charts (`M` / `:bar` churn, author frequency) — optional
 - [ ] AI assist (optional, creel `Ctrl+F` shape): explain evolution, summarize range
 - [ ] Packaging (GoReleaser, brew/scoop/AUR) when ready to publish
+
+---
+
+## Next up (sequenced)
+
+North star: make **line → previous versions → co-changed regions → authors** feel as fluid as creel’s FK walk. Stay archaeology-only.
+
+1. [x] **Line evolution stack** — from a blame line, walk porcelain `previous` into a scannable grid (`F`); Enter opens blame at that step; `f` stays one-hop
+2. [ ] **Pickaxe / content-history search** — `git log -S` / `-G` → results grid → blame / follow (`:pickaxe` / `/` mode)
+3. [ ] **Co-change → intersecting commits** — from Often-with (or a path pair), list commits where they co-occur
+4. [ ] **Rename / move edges everywhere** — “was X” / “moved from Y” in history, blame, and `g r` (not only `--follow`)
+5. [ ] **Bookmarks or detail hunk-walk** — palate cleanser after the graph work (`]`/`[` hunks; named views)
+
+Later (when the above feels sticky): hunk-centric mode, soft DAG jumps (parent/child/merge-base), timeline strip, quiet ownership summary in `g r`, export provenance trail, large-repo caching. Keep AI/charts/PR links optional and thin.
 
 ---
 

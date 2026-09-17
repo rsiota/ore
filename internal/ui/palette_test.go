@@ -137,6 +137,7 @@ func TestPaletteChordsExecutable(t *testing.T) {
 		"g r":     {"g", "r"},
 		"g g / G": {"g", "g"},
 		"f / g f": {"f"},
+		"F":       {"F"},
 	}
 	seen := map[string]bool{}
 	for _, it := range p.items {

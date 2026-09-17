@@ -96,6 +96,11 @@ func (m *Model) detailPathForView() string {
 		return m.historyPath
 	case MainBlame:
 		return m.blamePath
+	case MainLineEvo:
+		if m.evoCursor >= 0 && m.evoCursor < len(m.evo) {
+			return m.evo[m.evoCursor].Path
+		}
+		return m.evoOriginPath
 	}
 	return ""
 }

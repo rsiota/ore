@@ -31,6 +31,7 @@ const (
 	MainFiles
 	MainHistory
 	MainBlame
+	MainLineEvo
 )
 
 // Model is the root TUI state.
@@ -85,6 +86,14 @@ type Model struct {
 	blamePreferLine  int
 	loadingBlame     bool
 	chordG           bool // pending g-prefix for gg / gf in blame
+
+	evo           []git.LineEvolutionStep
+	evoCursor     int
+	evoOffset     int
+	evoCol        int
+	loadingEvo    bool
+	evoOriginPath string // blame path when evolution opened (esc restore)
+	evoOriginRev  string
 
 	detail           *git.CommitDetail
 	detailFilterPath string // path requested by the in-flight / latest reloadDetail
@@ -212,6 +221,13 @@ type blameLoadedMsg struct {
 	err   error
 }
 
+type lineEvoLoadedMsg struct {
+	path  string
+	rev   string
+	steps []git.LineEvolutionStep
+	err   error
+}
+
 type relationsLoadedMsg struct {
 	commit *git.CommitRelations
 	line   *git.LineRelations
@@ -265,6 +281,15 @@ func loadBlameCmd(repo *git.Repo, path, rev string) tea.Cmd {
 		defer cancel()
 		lines, err := repo.Blame(ctx, path, git.BlameOptions{Rev: rev})
 		return blameLoadedMsg{path: path, rev: rev, lines: lines, err: err}
+	}
+}
+
+func loadLineEvolutionCmd(repo *git.Repo, path, rev string, start git.BlameLine) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		steps, err := repo.LineEvolution(ctx, path, rev, start, 0)
+		return lineEvoLoadedMsg{path: path, rev: rev, steps: steps, err: err}
 	}
 }
 
@@ -421,9 +446,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.main = MainBlame
 		m.focus = FocusMain
 		m.chordG = false
-		m.status = fmt.Sprintf("blame · %s @ %s · %d lines · f follow · l fold · <> code · esc back",
+		m.status = fmt.Sprintf("blame · %s @ %s · %d lines · f follow · F evolve · l fold · <> code · esc back",
 			m.blamePath, shortHash(m.blameRev), len(m.blame))
 		if len(m.blame) > 0 {
+			return m, m.reloadDetail()
+		}
+		m.detail = nil
+		m.detailPath = ""
+		return m, nil
+
+	case lineEvoLoadedMsg:
+		m.loadingEvo = false
+		if msg.path != m.evoOriginPath || msg.rev != m.evoOriginRev {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.status = "error"
+			return m, nil
+		}
+		m.evo = msg.steps
+		m.evoCursor = 0
+		m.evoOffset = 0
+		m.evoCol = evoColCode
+		m.main = MainLineEvo
+		m.focus = FocusMain
+		m.chordG = false
+		m.status = fmt.Sprintf("evolve · %s · %d steps · enter blame · esc back",
+			m.evoOriginPath, len(m.evo))
+		if len(m.evo) > 0 {
 			return m, m.reloadDetail()
 		}
 		m.detail = nil
@@ -497,6 +548,11 @@ func (m Model) selectedHash() string {
 			return ""
 		}
 		return m.blame[idx[m.blameCursor]].Hash
+	case MainLineEvo:
+		if m.evoCursor < 0 || m.evoCursor >= len(m.evo) {
+			return ""
+		}
+		return m.evo[m.evoCursor].Line.Hash
 	case MainHistory:
 		idx := m.historyIndices()
 		if m.historyCursor < 0 || m.historyCursor >= len(idx) {
@@ -918,17 +974,34 @@ func (m *Model) refreshStatus() {
 			}
 			m.status += " · /" + col + m.filter
 		}
+	case MainLineEvo:
+		m.status = fmt.Sprintf("evolve · %s · %d steps", m.evoOriginPath, len(m.evo))
+		if len(m.evo) > 0 && m.evoCursor >= 0 && m.evoCursor < len(m.evo) {
+			s := m.evo[m.evoCursor]
+			m.status += fmt.Sprintf(" · #%d %s:%d", s.Index, shortHash(s.Line.Hash), s.Line.Line)
+		}
 	}
 }
 
 func (m Model) goBack() (tea.Model, tea.Cmd) {
 	switch m.main {
+	case MainLineEvo:
+		m.main = MainBlame
+		m.focus = FocusMain
+		m.status = fmt.Sprintf("blame · %s @ %s · %d lines", m.blamePath, shortHash(m.blameRev), len(m.blameIndices()))
+		return m, m.reloadDetail()
 	case MainBlame:
 		m.blame = nil
 		m.blamePath = ""
 		m.blameRev = ""
 		m.chordG = false
 		m.focus = FocusMain
+		if m.blameFrom == MainLineEvo && len(m.evo) > 0 {
+			m.main = MainLineEvo
+			m.status = fmt.Sprintf("evolve · %s · %d steps · enter blame · esc back", m.evoOriginPath, len(m.evo))
+			return m, m.reloadDetail()
+		}
+		m.evo = nil
 		if m.blameFrom == MainHistory && m.historyPath != "" {
 			m.main = MainHistory
 			m.status = fmt.Sprintf("history · %s · %d commits", m.historyPath, len(m.history))
@@ -1003,6 +1076,8 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleHistoryKeys(msg)
 	case MainBlame:
 		return m.handleBlameKeys(msg)
+	case MainLineEvo:
+		return m.handleEvoKeys(msg)
 	}
 	return m, nil
 }
@@ -1035,6 +1110,14 @@ func (m Model) gotoMainTop() (tea.Model, tea.Cmd) {
 		m.blameCursor = 0
 		m.ensureBlameVisible()
 		return m, m.blameReloadIfCommitChanged(prevHash)
+	case MainLineEvo:
+		if len(m.evo) == 0 {
+			return m, nil
+		}
+		prevHash := m.selectedHash()
+		m.evoCursor = 0
+		m.ensureEvoVisible()
+		return m, m.evoReloadIfCommitChanged(prevHash)
 	}
 	return m, m.reloadDetail()
 }
@@ -1425,8 +1508,101 @@ func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.blameReloadIfCommitChanged(prevHash)
 	case "f":
 		return m.followBlameLine()
+	case "F":
+		return m.openLineEvolution()
 	}
 	return m, nil
+}
+
+func (m Model) openLineEvolution() (tea.Model, tea.Cmd) {
+	idx := m.blameIndices()
+	if m.blameCursor < 0 || m.blameCursor >= len(idx) {
+		return m, nil
+	}
+	line := m.blame[idx[m.blameCursor]]
+	m.chordG = false
+	m.loadingEvo = true
+	m.evoOriginPath = m.blamePath
+	m.evoOriginRev = m.blameRev
+	m.status = fmt.Sprintf("evolving · %s:%d…", m.blamePath, line.Line)
+	return m, loadLineEvolutionCmd(m.repo, m.blamePath, m.blameRev, line)
+}
+
+func (m Model) handleEvoKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	n := len(m.evo)
+	switch msg.String() {
+	case "h", "left":
+		if m.evoCol > 0 {
+			m.evoCol--
+		}
+		return m, nil
+	case "l", "right":
+		if m.evoCol < evoColCount-1 {
+			m.evoCol++
+		}
+		return m, nil
+	case "0":
+		m.evoCol = 0
+		return m, nil
+	case "$":
+		m.evoCol = evoColCode
+		return m, nil
+	}
+	if n == 0 {
+		return m, nil
+	}
+	prevHash := m.selectedHash()
+	switch msg.String() {
+	case "j", "down":
+		if m.evoCursor < n-1 {
+			m.evoCursor++
+			m.ensureEvoVisible()
+			return m, m.evoReloadIfCommitChanged(prevHash)
+		}
+	case "k", "up":
+		if m.evoCursor > 0 {
+			m.evoCursor--
+			m.ensureEvoVisible()
+			return m, m.evoReloadIfCommitChanged(prevHash)
+		}
+	case "g", "home":
+		m.evoCursor = 0
+		m.ensureEvoVisible()
+		return m, m.evoReloadIfCommitChanged(prevHash)
+	case "G", "end":
+		m.evoCursor = n - 1
+		m.ensureEvoVisible()
+		return m, m.evoReloadIfCommitChanged(prevHash)
+	case "ctrl+d":
+		m.evoCursor = min(n-1, m.evoCursor+m.mainPage())
+		m.ensureEvoVisible()
+		return m, m.evoReloadIfCommitChanged(prevHash)
+	case "ctrl+u":
+		m.evoCursor = max(0, m.evoCursor-m.mainPage())
+		m.ensureEvoVisible()
+		return m, m.evoReloadIfCommitChanged(prevHash)
+	case "enter":
+		return m.activateEvolutionStep()
+	}
+	return m, nil
+}
+
+func (m *Model) evoReloadIfCommitChanged(prevHash string) tea.Cmd {
+	cur := m.selectedHash()
+	if prevHash != "" && cur != "" && hashMatch(prevHash, cur) {
+		return nil
+	}
+	return m.reloadDetail()
+}
+
+func (m Model) activateEvolutionStep() (tea.Model, tea.Cmd) {
+	if m.evoCursor < 0 || m.evoCursor >= len(m.evo) {
+		return m, nil
+	}
+	step := m.evo[m.evoCursor]
+	cmd := m.startBlame(step.Path, step.Rev, MainLineEvo)
+	m.blamePreferLine = step.Line.Line
+	return m, cmd
 }
 
 // blameReloadIfCommitChanged skips a detail fetch when the cursor stays on the
@@ -1855,6 +2031,9 @@ func (m *Model) clampMainCursor() {
 	case MainBlame:
 		m.blameCursor = min(m.blameCursor, max(0, len(m.blameIndices())-1))
 		m.ensureBlameVisible()
+	case MainLineEvo:
+		m.evoCursor = min(m.evoCursor, max(0, len(m.evo)-1))
+		m.ensureEvoVisible()
 	}
 }
 
@@ -1929,7 +2108,7 @@ func (m Model) renderStatus() string {
 	// Detail reloads on every j/k; treating them as "busy" hides the right-hand
 	// key hints and makes the status bar flicker. Keep hints stable — the detail
 	// pane already holds the previous patch until the new one is ready.
-	busy := m.loading || m.loadingHistory || m.loadingBlame || m.loadingRel
+	busy := m.loading || m.loadingHistory || m.loadingBlame || m.loadingRel || m.loadingEvo
 
 	var hints string
 	switch {
@@ -2041,6 +2220,8 @@ func (m Model) renderMainPane(width, height int) string {
 		return m.renderHistoryPane(width, height)
 	case MainBlame:
 		return m.renderBlamePane(width, height)
+	case MainLineEvo:
+		return m.renderEvolutionPane(width, height)
 	default:
 		return m.renderCommitPane(width, height)
 	}
@@ -2054,6 +2235,8 @@ func (m Model) mainTitle() string {
 		return "history"
 	case MainBlame:
 		return "blame"
+	case MainLineEvo:
+		return "evolve"
 	default:
 		return "commits"
 	}

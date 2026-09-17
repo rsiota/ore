@@ -34,6 +34,14 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"evolve", "evolution", "evo"},
+			desc:  "open line evolution stack for the selected blame line",
+			usage: ":evolve",
+			run: func(m *Model, _ []string) tea.Cmd {
+				return m.exEvolve()
+			},
+		},
+		{
 			verbs: []string{"goto", "go"},
 			desc:  "jump to a commit by hash prefix",
 			usage: ":goto <hash>",

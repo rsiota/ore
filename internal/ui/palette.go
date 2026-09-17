@@ -114,6 +114,7 @@ var chordReplays = map[string][]string{
 	"g b":     {"g", "b"},
 	"g g / G": {"g", "g"},
 	"f / g f": {"f"},
+	"F":       {"F"},
 }
 
 // replayTokens returns the key sequence the palette should replay, or nil.

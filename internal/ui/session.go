@@ -46,6 +46,19 @@ func (m Model) snapshotSession() session.State {
 		} else {
 			st.BlameFrom = "files"
 		}
+	case MainLineEvo:
+		// Persist as blame at the evolution origin; reopen restores the file view.
+		st.Main = "blame"
+		st.Path = m.evoOriginPath
+		st.BlameRev = m.evoOriginRev
+		st.Commit = m.filesCommitHash
+		if st.Commit == "" {
+			st.Commit = m.evoOriginRev
+		}
+		if len(m.evo) > 0 {
+			st.BlameLine = m.evo[0].Line.Line
+		}
+		st.BlameFrom = "files"
 	}
 	return st
 }

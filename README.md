@@ -12,7 +12,7 @@ go run ./cmd/ore /path/to/repo
 go run ./cmd/ore -C /path/to/repo
 ```
 
-**Keys:** `ctrl+p` palette · `D` zen/unified diff · `w` wrap · `[`/`]` zen context · `:` commands · `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `esc` back · `q` quit
+**Keys:** `ctrl+p` palette · `D` zen/unified diff · `w` wrap · `[`/`]` zen context · `:` commands · `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `F` evolve · `esc` back · `q` quit
 
 **Commit grid:** soft graph · `h`/`l` columns · `o` cycle sort · `/` filters the active column
 
@@ -25,6 +25,7 @@ Commit grid is columnar (sort + column-scoped `/`). Ex commands (`:blame`, `:his
 | Command | Action |
 |---------|--------|
 | `:blame <path> [rev]` | Open blame (rev defaults to selection / HEAD) |
+| `:evolve` | Line evolution stack for the selected blame line (`F`) |
 | `:history <path>` | Path history with rename follow |
 | `:goto <hash>` | Jump to commit (prefix match) |
 | `:theme [light|dark]` | Switch colour theme (persisted) |

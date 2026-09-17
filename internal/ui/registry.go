@@ -46,7 +46,8 @@ func registry() []Section {
 				{"enter", []string{"enter"}, "open (commit→files→history; history→blame)", "enter"},
 				{"l", []string{"l"}, "open (blame from non-grid views)", ""},
 				{"b", []string{"b"}, "blame file at revision", "b"},
-				{"f / g f", []string{"f", "g"}, "follow blame line backward", "f"},
+				{"f / g f", []string{"f", "g"}, "follow blame line backward one hop", "f"},
+				{"F", []string{"F"}, "line evolution stack from blame", "F"},
 			},
 		},
 		{
@@ -88,7 +89,17 @@ func registry() []Section {
 				{"< / >", []string{"<", ">", ",", "."}, "scroll code left / right", "<>"},
 				{"o", []string{"o"}, "cycle sort on current column (asc→desc→off)", "o"},
 				{"/", []string{"/"}, "filter current column", "/"},
-				{"f / g f", []string{"f", "g"}, "follow line backward", "f"},
+				{"f / g f", []string{"f", "g"}, "follow line backward one hop", "f"},
+				{"F", []string{"F"}, "open line evolution stack", "F"},
+			},
+		},
+		{
+			Title: "Line evolution",
+			Items: []Binding{
+				{"F", []string{"F"}, "open from blame line", "F"},
+				{"j/k", []string{"j", "k"}, "move in evolution stack", "j/k"},
+				{"enter", []string{"enter"}, "open blame at this step", "enter"},
+				{"esc", []string{"esc"}, "back to blame", "esc"},
 			},
 		},
 		{
@@ -110,6 +121,7 @@ func registry() []Section {
 				{"files", nil, "paths changed in the selected commit", ""},
 				{"history", nil, "git log --follow for a path", ""},
 				{"blame", nil, "line archaeology grid", ""},
+				{"evolve", nil, "line provenance stack from blame (F)", ""},
 			},
 		},
 		{
@@ -156,6 +168,8 @@ func statusHintList(main MainView, explorerOpen bool) []string {
 		return append([]string{"j/k"}, append(hintsForSection("History grid"), "gb", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainBlame:
 		return append([]string{"j/k"}, append(hintsForSection("Blame"), "gb", "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+	case MainLineEvo:
+		return append([]string{"j/k"}, append(hintsForSection("Line evolution"), "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	default:
 		return []string{"j/k", "enter", "tab", "D", "w", "ctrl+p", "?", "esc", "q"}
 	}
