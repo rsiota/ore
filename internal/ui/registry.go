@@ -103,6 +103,22 @@ func registry() []Section {
 			},
 		},
 		{
+			Title: "Detail yank",
+			Items: []Binding{
+				{"tab", []string{"tab"}, "enter / leave detail yank browser", "tab"},
+				{"hjkl", []string{"h", "j", "k", "l"}, "move by character / line", "hjkl"},
+				{"w/b/e", []string{"w", "b", "e"}, "word motions", "w/b/e"},
+				{"0 / $", []string{"0", "$"}, "line start / end", ""},
+				{"g g / G", []string{"g", "G"}, "top / bottom", "gg/G"},
+				{"f/t/F/T", []string{"f", "t", "F", "T"}, "find char on line", ""},
+				{"/", []string{"/"}, "search in detail pane", "/"},
+				{"n / N", []string{"n", "N"}, "next / previous search match", ""},
+				{"v / V", []string{"v", "V"}, "visual char / line", "v/V"},
+				{"y / Y", []string{"y", "Y"}, "yank selection / line (yy yw y$)", "y"},
+				{"esc", []string{"esc"}, "leave visual, then leave detail", "esc"},
+			},
+		},
+		{
 			Title: "Relationships (g r)",
 			Items: []Binding{
 				{"g r", []string{"g", "r"}, "open explorer for commit or blame line", "gr"},
@@ -190,6 +206,14 @@ func statusHintList(main MainView, explorerOpen bool) []string {
 	default:
 		return []string{"j/k", "enter", "tab", "D", "w", "ctrl+p", "?", "esc", "q"}
 	}
+}
+
+// statusHintListFocus is statusHintList with detail-yank focus awareness.
+func statusHintListFocus(main MainView, explorerOpen bool, focus Focus) []string {
+	if focus == FocusDetail {
+		return hintsForSection("Detail yank")
+	}
+	return statusHintList(main, explorerOpen)
 }
 
 // statusHints joins contextual key hints with "/" like creel's status bar.

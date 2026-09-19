@@ -1,0 +1,135 @@
+package ui
+
+import (
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/rsiota/ore/internal/git"
+)
+
+func TestYankMotions(t *testing.T) {
+	lines := []string{"alpha beta", "gamma", ""}
+	r, c := moveWordForward(lines, 0, 0)
+	if r != 0 || c != 6 {
+		t.Fatalf("w from start = %d,%d want 0,6", r, c)
+	}
+	r, c = moveWordEnd(lines, 0, 0)
+	if r != 0 || c != 4 {
+		t.Fatalf("e = %d,%d want 0,4", r, c)
+	}
+	r, c = moveWordBackward(lines, 0, 6)
+	if r != 0 || c != 0 {
+		t.Fatalf("b = %d,%d want 0,0", r, c)
+	}
+	r, c = moveLineEnd(lines, 0, 0)
+	if c != 9 {
+		t.Fatalf("$ col = %d", c)
+	}
+	r, c, ok := findOnLine(lines, 0, 0, 'b', false, false)
+	if !ok || c != 6 {
+		t.Fatalf("f b = %d,%d ok=%v", r, c, ok)
+	}
+}
+
+func TestYankSelectionCharAndLine(t *testing.T) {
+	lines := []string{"abcdef", "ghij"}
+	y := detailYank{row: 0, col: 2, visual: yankVisualChar, anchorRow: 0, anchorCol: 0}
+	if got := yankSelection(lines, y); got != "abc" {
+		t.Fatalf("char sel = %q", got)
+	}
+	y = detailYank{row: 1, col: 0, visual: yankVisualLine, anchorRow: 0, anchorCol: 0}
+	if got := yankSelection(lines, y); got != "abcdef\nghij" {
+		t.Fatalf("line sel = %q", got)
+	}
+	if got := wordAtCursor(lines, 0, 1); got != "abcdef" {
+		t.Fatalf("word = %q", got)
+	}
+}
+
+func TestYankSearch(t *testing.T) {
+	lines := []string{"one", "two foo", "three"}
+	r, c, ok := searchForward(lines, 0, 0, "foo")
+	if !ok || r != 1 || c != 4 {
+		t.Fatalf("search foo = %d,%d ok=%v", r, c, ok)
+	}
+	r, c, ok = searchBackward(lines, 2, 0, "one")
+	if !ok || r != 0 || c != 0 {
+		t.Fatalf("search back one = %d,%d ok=%v", r, c, ok)
+	}
+}
+
+func TestEnterLeaveDetailYank(t *testing.T) {
+	m := Model{
+		focus:       FocusMain,
+		width:       80,
+		height:      24,
+		detailCache: &detailRenderCache{},
+		detail: &git.CommitDetail{
+			Commit: git.Commit{Hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ShortHash: "aaaaaaa", Subject: "subj"},
+			Diff:   "+hello world\n",
+		},
+		diffMode: DiffZen,
+	}
+	m.enterDetailYank()
+	if m.focus != FocusDetail {
+		t.Fatal("expected FocusDetail")
+	}
+	if m.yank.modeLabel() != "VIEW" {
+		t.Fatalf("mode = %s", m.yank.modeLabel())
+	}
+	mm, cmd := m.handleDetailKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m = mm.(Model)
+	if m.yank.pending != yankPendingY {
+		t.Fatal("expected y-pending")
+	}
+	mm, cmd = m.handleDetailKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m = mm.(Model)
+	if cmd == nil {
+		t.Fatal("yy should return clipboard cmd")
+	}
+	if m.yank.register == "" {
+		t.Fatal("expected register set")
+	}
+	// Drive the clipboard cmd (may skip write errors in headless envs).
+	if msg := cmd(); msg != nil {
+		if yc, ok := msg.(yankCopiedMsg); ok && yc.n == 0 {
+			t.Fatal("expected non-zero yank length")
+		}
+	}
+	mm, _ = m.handleDetailKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	m = mm.(Model)
+	if m.focus != FocusMain {
+		t.Fatalf("esc should leave yank, focus=%v", m.focus)
+	}
+}
+
+func TestYankEscPeelsVisualFirst(t *testing.T) {
+	m := Model{focus: FocusDetail, width: 80, height: 24, detailCache: &detailRenderCache{}}
+	m.yank.visual = yankVisualLine
+	m.yank.anchorRow = 0
+	mm, _ := m.handleDetailKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	m = mm.(Model)
+	if m.yank.visual != yankVisualNone || m.focus != FocusDetail {
+		t.Fatalf("esc should clear visual first: visual=%v focus=%v", m.yank.visual, m.focus)
+	}
+}
+
+func TestPaintYankKeepsHighlightOutsideVisual(t *testing.T) {
+	applyTheme("light")
+	styled := styleAdd.Render("hello") + styleDel.Render(" world")
+	plain := ansi.Strip(styled)
+	y := detailYank{row: 0, col: 1, visual: yankVisualNone}
+	got := paintYankOnStyled(styled, plain, 20, 0, y)
+	// Diff colours should still be present (SGR), not flattened to plain cell fg only.
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("expected ANSI highlight preserved: %q", got)
+	}
+	y.visual = yankVisualLine
+	y.anchorRow = 0
+	washed := paintYankOnStyled(styled, plain, 20, 0, y)
+	if ansi.Strip(washed) == "" {
+		t.Fatal("visual line should still show text")
+	}
+}

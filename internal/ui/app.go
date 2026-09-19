@@ -156,6 +156,8 @@ type Model struct {
 	explorer   RelExplorer
 	loadingRel bool
 
+	yank detailYank // readonly detail yank browser (FocusDetail)
+
 	// refreshPreferHash, when set, marks commitsLoadedMsg as a refresh rather
 	// than the initial load: restore the commit cursor to this hash and keep
 	// the current main view.
@@ -440,6 +442,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case detailPatchMsg:
 		return m.handleDetailPatch(msg)
+
+	case yankCopiedMsg:
+		if msg.err != nil {
+			m.status = fmt.Sprintf("yanked %d · clipboard unavailable (%v)", msg.n, msg.err)
+		} else {
+			m.status = fmt.Sprintf("yanked %d chars", msg.n)
+		}
+		return m, nil
 
 	case historyLoadedMsg:
 		m.loadingHistory = false
@@ -743,6 +753,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleExplorerKeys(msg)
 	}
 
+	if m.focus == FocusDetail {
+		// Detail yank owns keys (incl. w/esc/h) so they don't fight grid globals.
+		if msg.String() == "ctrl+c" || msg.String() == "q" {
+			return m, m.beginQuit()
+		}
+		if msg.String() == "ctrl+p" {
+			m.leaveDetailYank()
+			m.branches.Hide()
+			m.palette.Open()
+			m.status = "command palette"
+			return m, nil
+		}
+		return m.handleDetailKeys(msg)
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, m.beginQuit()
@@ -866,9 +891,9 @@ func (m Model) cycleFocus() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.focus == FocusMain {
-		m.focus = FocusDetail
+		m.enterDetailYank()
 	} else {
-		m.focus = FocusMain
+		m.leaveDetailYank()
 	}
 	return m, nil
 }
@@ -2006,32 +2031,6 @@ func (m Model) followBlameLine() (tea.Model, tea.Cmd) {
 	return m, loadBlameCmd(m.repo, path, line.PreviousHash)
 }
 
-func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	total := m.detailVisualCount()
-	page := max(1, m.detailViewHeight()-1)
-	switch msg.String() {
-	case "j", "down":
-		if m.detailOffset < total-1 {
-			m.detailOffset++
-		}
-	case "k", "up":
-		if m.detailOffset > 0 {
-			m.detailOffset--
-		}
-	case "g", "home":
-		m.detailOffset = 0
-	case "G", "end":
-		m.detailOffset = max(0, total-page)
-	case "ctrl+d":
-		m.detailOffset = min(max(0, total-page), m.detailOffset+page)
-	case "ctrl+u":
-		m.detailOffset = max(0, m.detailOffset-page)
-	case "esc", "backspace", "h":
-		return m.goBack()
-	}
-	return m, nil
-}
-
 // refresh reloads the commit log (and re-fetches the current view), matching
 // ctrl+r. Shared by the keybinding and :refresh so the two cannot drift.
 func (m *Model) refresh() tea.Cmd {
@@ -2462,6 +2461,9 @@ func (m Model) renderStatus() string {
 	leftTab := renderStatusTab(m.mainTitle(), m.focus == FocusMain)
 	rightTitle := "detail"
 	rightFocused := m.focus == FocusDetail
+	if m.focus == FocusDetail {
+		rightTitle = "detail · " + m.yank.modeLabel()
+	}
 	if m.explorer.Opened() {
 		rightTitle = "relationships"
 		rightFocused = m.focus == FocusExplorer
@@ -2497,7 +2499,7 @@ func (m Model) renderStatus() string {
 	// fetches and error states), so the right corner stays visually stable.
 	var descStyled string
 	if m.err == "" {
-		hintList := statusHintList(m.main, m.explorer.Opened())
+		hintList := statusHintListFocus(m.main, m.explorer.Opened(), m.focus)
 		hints = renderHintStrip(hintList, m.hintFlash, m.hintFlashActive())
 		if m.hintDescActive() {
 			descStyled = m.hintDesc
@@ -2872,6 +2874,25 @@ func (m Model) renderDetailPane(width, height int) string {
 	h := height
 	if h < 1 {
 		h = 1
+	}
+	if m.focus == FocusDetail {
+		all := m.detailVisualLines()
+		plain := plainDetailLines(all)
+		total := len(all)
+		offset := m.detailOffset
+		if offset > max(0, total-1) {
+			offset = max(0, total-1)
+		}
+		end := min(total, offset+h)
+		rows := make([]string, 0, h)
+		for i := offset; i < end; i++ {
+			p := ""
+			if i < len(plain) {
+				p = plain[i]
+			}
+			rows = append(rows, paintYankOnStyled(all[i], p, width, i, m.yank))
+		}
+		return padPane(rows, width, height)
 	}
 	lines, _ := m.detailVisualWindow(width, h, m.detailOffset)
 	return padPane(lines, width, height)
