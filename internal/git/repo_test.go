@@ -190,6 +190,16 @@ func TestFileHistoryFollowsRename(t *testing.T) {
 	if hist[len(hist)-1].Subject != "add old" {
 		t.Errorf("oldest = %q", hist[len(hist)-1].Subject)
 	}
+	if hist[0].Path != "new.txt" || hist[0].OldPath != "old.txt" || !strings.HasPrefix(hist[0].Status, "R") {
+		t.Fatalf("rename hop = path=%q old=%q status=%q", hist[0].Path, hist[0].OldPath, hist[0].Status)
+	}
+	if hist[0].EdgeLabel() != "moved from old.txt" {
+		t.Errorf("edge = %q", hist[0].EdgeLabel())
+	}
+	oldest := hist[len(hist)-1]
+	if oldest.Path != "old.txt" {
+		t.Fatalf("oldest path = %q, want old.txt", oldest.Path)
+	}
 
 	detail, err := repo.ShowPath(ctx, hist[0].Hash, "new.txt", 3)
 	if err != nil {
@@ -201,6 +211,22 @@ func TestFileHistoryFollowsRename(t *testing.T) {
 	if strings.Contains(detail.Diff, "old.txt") && !strings.Contains(detail.Diff, "new.txt") {
 		// rename patch may mention both; at least new.txt should appear
 		t.Errorf("diff should mention new.txt: %s", detail.Diff)
+	}
+
+	// Pre-rename commit must be shown with the path at that revision.
+	oldDetail, err := repo.ShowPath(ctx, oldest.Hash, oldest.Path, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldDetail.Stat == "" && len(oldDetail.Files) == 0 {
+		t.Fatal("expected path-scoped stat for old.txt at introducing commit")
+	}
+	tipOnOld, err := repo.ShowPath(ctx, oldest.Hash, "new.txt", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tipOnOld.Stat != "" || len(tipOnOld.Files) > 0 {
+		t.Fatalf("tip path on pre-rename commit should be empty; got stat=%q files=%#v", tipOnOld.Stat, tipOnOld.Files)
 	}
 }
 

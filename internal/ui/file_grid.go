@@ -32,7 +32,7 @@ func fileCell(f git.FileChange, col int) string {
 		return fmt.Sprintf("%d", f.Deletions)
 	case fileColPath:
 		if f.OldPath != "" {
-			return f.OldPath + " → " + f.Path
+			return f.Path + " (was " + f.OldPath + ")"
 		}
 		return f.Path
 	default:

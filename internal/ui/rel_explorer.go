@@ -116,24 +116,51 @@ func buildLineRoot(rel git.LineRelations, e *RelExplorer) []*relNode {
 
 	roots = append(roots, &relNode{kind: relSection, label: "Previous"})
 	if rel.Previous != nil {
-		roots = append(roots, e.commitNode(rel.Previous.Hash, formatRelCommit(*rel.Previous), 1, nil))
+		label := formatRelCommit(*rel.Previous)
+		prevPath := rel.PreviousPath
+		if prevPath == "" {
+			prevPath = bl.PreviousPath
+		}
+		if prevPath != "" && prevPath != rel.Path {
+			label += " · moved from " + prevPath
+		} else if prevPath != "" {
+			label += " · was " + prevPath
+		}
+		roots = append(roots, e.commitNode(rel.Previous.Hash, label, 1, nil))
 	} else {
 		roots = append(roots, &relNode{kind: relMeta, depth: 1, label: "(none)"})
 	}
 
 	roots = append(roots, &relNode{kind: relSection, label: fmt.Sprintf("File history (%d)", len(rel.History))})
 	for _, c := range rel.History {
-		n := e.commitNode(c.Hash, formatRelCommit(c), 1, nil)
-		n.path = rel.Path
+		label := formatRelCommit(c.Commit)
+		if edge := c.EdgeLabel(); edge != "" {
+			label += " · " + edge
+		} else if c.Path != "" && c.Path != rel.Path {
+			label += " · was " + c.Path
+		}
+		n := e.commitNode(c.Hash, label, 1, nil)
+		n.path = c.Path
+		if n.path == "" {
+			n.path = rel.Path
+		}
 		roots = append(roots, n)
 	}
 
 	roots = append(roots, &relNode{kind: relSection, label: "File"})
+	fileLabel := rel.Path
+	if rel.PreviousPath != "" && rel.PreviousPath != rel.Path {
+		fileLabel = rel.Path + " (was " + rel.PreviousPath + ")"
+	}
 	roots = append(roots, &relNode{
 		kind: relFile, depth: 1, selectable: true,
-		path: rel.Path, hash: rel.Rev, label: rel.Path,
+		path: rel.Path, hash: rel.Rev, label: fileLabel,
 	})
-	roots = append(roots, hotSpotNodes(rel.HotSpots, 0, nil, rel.Rev, []string{rel.Path})...)
+	seeds := []string{rel.Path}
+	if rel.PreviousPath != "" && rel.PreviousPath != rel.Path {
+		seeds = append(seeds, rel.PreviousPath)
+	}
+	roots = append(roots, hotSpotNodes(rel.HotSpots, 0, nil, rel.Rev, seeds)...)
 	return roots
 }
 
@@ -162,7 +189,7 @@ func commitRelationBlocks(rel git.CommitRelations, depth int, parent *relNode, e
 	for _, f := range rel.Files {
 		path := f.Path
 		if f.OldPath != "" {
-			path = f.OldPath + " → " + f.Path
+			path = f.Path + " (was " + f.OldPath + ")"
 		}
 		out = append(out, &relNode{
 			kind: relFile, depth: depth + 1, parent: parent, selectable: true,

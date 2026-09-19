@@ -45,7 +45,7 @@ func TestSortFileIndices(t *testing.T) {
 
 func TestFileRowRename(t *testing.T) {
 	row := fileRow(git.FileChange{Path: "new.go", OldPath: "old.go", Status: "R"})
-	if row[fileColPath] != "old.go → new.go" {
+	if row[fileColPath] != "new.go (was old.go)" {
 		t.Fatalf("path cell = %q", row[fileColPath])
 	}
 }

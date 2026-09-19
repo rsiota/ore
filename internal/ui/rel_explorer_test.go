@@ -8,6 +8,82 @@ import (
 	"github.com/rsiota/ore/internal/git"
 )
 
+func TestRelExplorerCommitRenameWasLabel(t *testing.T) {
+	var e RelExplorer
+	e.LoadCommit(git.CommitRelations{
+		Hash:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Subject: "move",
+		Author:  "a",
+		Email:   "a@b",
+		Files:   []git.FileChange{{Path: "new.go", OldPath: "old.go", Status: "R"}},
+	})
+	found := false
+	for _, n := range e.visibleNodes() {
+		if n.kind == relFile && n.path == "new.go" {
+			found = true
+			if !strings.Contains(n.label, "was old.go") {
+				t.Fatalf("label = %q, want was old.go", n.label)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected rename file row")
+	}
+}
+
+func TestRelExplorerLineMovedFrom(t *testing.T) {
+	var e RelExplorer
+	e.LoadLine(git.LineRelations{
+		Line: git.BlameLine{
+			Line: 1, Hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			ShortHash: "aaaaaaa", Summary: "here", Text: "x",
+			PreviousHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			PreviousPath: "old.go",
+		},
+		Path:         "new.go",
+		Rev:          "HEAD",
+		PreviousPath: "old.go",
+		Previous: &git.Commit{
+			Hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			ShortHash: "bbbbbbb", Subject: "before",
+		},
+		History: []git.PathCommit{
+			{
+				Commit:  git.Commit{Hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ShortHash: "aaaaaaa", Subject: "rename"},
+				Path:    "new.go",
+				OldPath: "old.go",
+				Status:  "R100",
+			},
+			{
+				Commit: git.Commit{Hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ShortHash: "bbbbbbb", Subject: "add"},
+				Path:   "old.go",
+				Status: "A",
+			},
+		},
+	})
+	prevOK, histOK, fileOK := false, false, false
+	for _, n := range e.visibleNodes() {
+		if n.kind == relCommit && strings.Contains(n.label, "moved from old.go") {
+			prevOK = true
+		}
+		if n.kind == relCommit && strings.Contains(n.label, "moved from old.go") && strings.Contains(n.label, "rename") {
+			histOK = true
+		}
+		if n.kind == relFile && strings.Contains(n.label, "was old.go") {
+			fileOK = true
+		}
+	}
+	if !prevOK {
+		t.Fatal("expected Previous row with moved from")
+	}
+	if !histOK {
+		t.Fatal("expected history rename hop label")
+	}
+	if !fileOK {
+		t.Fatal("expected File row with was")
+	}
+}
+
 func TestRelExplorerCommitSelectable(t *testing.T) {
 	var e RelExplorer
 	e.LoadCommit(git.CommitRelations{

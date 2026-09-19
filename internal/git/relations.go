@@ -20,12 +20,13 @@ type CommitRelations struct {
 
 // LineRelations is archaeology context for one blamed line.
 type LineRelations struct {
-	Line     BlameLine
-	Path     string
-	Rev      string
-	History  []Commit // recent commits that touched the path (follow)
-	Previous *Commit  // previous blame commit when known
-	HotSpots []CoChange
+	Line         BlameLine
+	Path         string
+	Rev          string
+	History      []PathCommit // recent commits that touched the path (follow + edges)
+	Previous     *Commit      // previous blame commit when known
+	PreviousPath string       // porcelain previous path when it differs / is set
+	HotSpots     []CoChange
 }
 
 // Relations returns parents, children, and files for hash.
@@ -76,7 +77,7 @@ func (r *Repo) Relations(ctx context.Context, hash string) (CommitRelations, err
 
 // LineRelationsAt builds neighbourhood for a blame line at path@rev.
 func (r *Repo) LineRelationsAt(ctx context.Context, path, rev string, line BlameLine) (LineRelations, error) {
-	out := LineRelations{Line: line, Path: path, Rev: rev}
+	out := LineRelations{Line: line, Path: path, Rev: rev, PreviousPath: line.PreviousPath}
 	hist, err := r.FileHistory(ctx, path, LogOptions{MaxCount: 30, Rev: rev})
 	if err != nil {
 		return out, err
@@ -88,7 +89,11 @@ func (r *Repo) LineRelationsAt(ctx context.Context, path, rev string, line Blame
 			out.Previous = &c
 		}
 	}
-	if hot, err := r.CoChangedFiles(ctx, []string{path}, ""); err == nil {
+	seeds := []string{path}
+	if line.PreviousPath != "" && line.PreviousPath != path {
+		seeds = append(seeds, line.PreviousPath)
+	}
+	if hot, err := r.CoChangedFiles(ctx, seeds, ""); err == nil {
 		out.HotSpots = hot
 	}
 	return out, nil

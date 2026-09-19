@@ -63,7 +63,7 @@ type Model struct {
 	openFilesPending bool
 
 	historyPath      string
-	history          []git.Commit
+	history          []git.PathCommit
 	historyCursor    int
 	historyOffset    int
 	historyCol       int
@@ -226,7 +226,7 @@ type commitsLoadedMsg struct {
 
 type historyLoadedMsg struct {
 	path    string
-	commits []git.Commit
+	commits []git.PathCommit
 	err     error
 }
 
@@ -454,7 +454,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history = msg.commits
 		m.historyCursor = 0
 		m.historyOffset = 0
-		m.historyCol = commitColHash
+		m.historyCol = histColHash
 		m.historySortCol = -1
 		m.historySortDir = SortNone
 		m.filter = ""
@@ -510,6 +510,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chordG = false
 		m.status = fmt.Sprintf("blame · %s @ %s · %d lines · f follow · F evolve · l fold · <> code · esc back",
 			m.blamePath, shortHash(m.blameRev), len(m.blame))
+		if bl, ok := m.selectedBlameLine(); ok && bl.PreviousPath != "" && bl.PreviousPath != m.blamePath {
+			m.status += " · was " + bl.PreviousPath
+		}
 		if len(m.blame) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -989,8 +992,8 @@ func (m Model) filterPrompt() string {
 		}
 	case MainHistory:
 		col := m.historyFilterCol
-		if col >= 0 && col < len(commitColumns) {
-			return "filter " + commitColumns[col] + ": " + m.filter + "█"
+		if col >= 0 && col < len(histColumns) {
+			return "filter " + histColumns[col] + ": " + m.filter + "█"
 		}
 	case MainBlame:
 		col := m.blameFilterCol
@@ -1078,18 +1081,28 @@ func (m *Model) refreshStatus() {
 		}
 	case MainHistory:
 		m.status = fmt.Sprintf("history · %s · %d commits", m.historyPath, len(m.historyIndices()))
-		if m.historySortDir != SortNone && m.historySortCol >= 0 && m.historySortCol < len(commitColumns) {
-			m.status += fmt.Sprintf(" · sort %s%s", commitColumns[m.historySortCol], m.historySortDir.Arrow())
+		if pc, ok := m.selectedHistory(); ok {
+			if edge := pc.EdgeLabel(); edge != "" {
+				m.status += " · " + edge
+			} else if pc.Path != "" && pc.Path != m.historyPath {
+				m.status += " · was " + pc.Path
+			}
+		}
+		if m.historySortDir != SortNone && m.historySortCol >= 0 && m.historySortCol < len(histColumns) {
+			m.status += fmt.Sprintf(" · sort %s%s", histColumns[m.historySortCol], m.historySortDir.Arrow())
 		}
 		if m.filter != "" {
 			col := ""
-			if m.historyFilterCol >= 0 && m.historyFilterCol < len(commitColumns) {
-				col = commitColumns[m.historyFilterCol] + " "
+			if m.historyFilterCol >= 0 && m.historyFilterCol < len(histColumns) {
+				col = histColumns[m.historyFilterCol] + " "
 			}
 			m.status += " · /" + col + m.filter
 		}
 	case MainBlame:
 		m.status = fmt.Sprintf("blame · %s @ %s · %d lines", m.blamePath, shortHash(m.blameRev), len(m.blameIndices()))
+		if bl, ok := m.selectedBlameLine(); ok && bl.PreviousPath != "" && bl.PreviousPath != m.blamePath {
+			m.status += " · was " + bl.PreviousPath
+		}
 		if m.blameSortDir != SortNone && m.blameSortCol >= 0 && m.blameSortCol < len(blameColumns) {
 			m.status += fmt.Sprintf(" · sort %s%s", blameColumns[m.blameSortCol], m.blameSortDir.Arrow())
 		}
@@ -1483,7 +1496,7 @@ func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		path := m.files[idx[m.fileCursor]].Path
 		m.historyPath = path
-		m.historyCol = commitColHash
+		m.historyCol = histColHash
 		m.historySortCol = -1
 		m.historySortDir = SortNone
 		m.loadingHistory = true
@@ -1505,7 +1518,7 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "l", "right":
-		if m.historyCol < commitColCount-1 {
+		if m.historyCol < histColCount-1 {
 			m.historyCol++
 		}
 		return m, nil
@@ -1513,10 +1526,10 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.historyCol = 0
 		return m, nil
 	case "$":
-		m.historyCol = commitColCount - 1
+		m.historyCol = histColCount - 1
 		return m, nil
 	case "o":
-		if m.historyCol == commitColGraph {
+		if m.historyCol == histColGraph {
 			return m, nil
 		}
 		if m.historySortCol != m.historyCol {
@@ -1565,7 +1578,12 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureHistoryVisible()
 		return m, m.reloadDetail()
 	case "b", "enter":
-		return m, m.startBlame(m.historyPath, m.history[idx[m.historyCursor]].Hash, MainHistory)
+		pc := m.history[idx[m.historyCursor]]
+		path := pc.Path
+		if path == "" {
+			path = m.historyPath
+		}
+		return m, m.startBlame(path, pc.Hash, MainHistory)
 	}
 	return m, nil
 }
@@ -1972,6 +1990,7 @@ func (m Model) followBlameLine() (tea.Model, tea.Cmd) {
 		m.status = "no earlier revision for this line"
 		return m, nil
 	}
+	fromPath := m.blamePath
 	path := m.blamePath
 	if line.PreviousPath != "" {
 		path = line.PreviousPath
@@ -1981,6 +2000,9 @@ func (m Model) followBlameLine() (tea.Model, tea.Cmd) {
 	m.blamePreferLine = line.Line
 	m.loadingBlame = true
 	m.status = fmt.Sprintf("follow · %s @ %s", path, shortHash(line.PreviousHash))
+	if path != fromPath {
+		m.status = fmt.Sprintf("follow · moved from %s · %s @ %s", fromPath, path, shortHash(line.PreviousHash))
+	}
 	return m, loadBlameCmd(m.repo, path, line.PreviousHash)
 }
 
@@ -2351,8 +2373,8 @@ func (m Model) historyIndices() []int {
 	if m.filter != "" || m.filterTyping {
 		col = m.historyFilterCol
 	}
-	idx := filterCommitIndicesCol(m.history, m.filter, col)
-	return sortCommitIndices(m.history, idx, m.historySortCol, m.historySortDir)
+	idx := filterHistIndicesCol(m.history, m.filter, col)
+	return sortHistIndices(m.history, idx, m.historySortCol, m.historySortDir)
 }
 
 func (m Model) blameIndices() []int {
@@ -2666,13 +2688,13 @@ func (m Model) renderFilesPane(width, height int) string {
 
 func (m Model) renderHistoryPane(width, height int) string {
 	idx := m.historyIndices()
-	graphs := commitGraphLines(m.history, idx, m.historySortDir)
+	graphs := histGraphLines(m.history, idx, m.historySortDir)
 	rows := make([][]string, len(idx))
 	for i, src := range idx {
-		rows[i] = commitRow(m.history[src], graphs[i])
+		rows[i] = histRow(m.history[src], graphs[i])
 	}
 	g := Grid{
-		Columns:    commitColumns,
+		Columns:    histColumns,
 		Rows:       rows,
 		CursorRow:  m.historyCursor,
 		CursorCol:  m.historyCol,
@@ -2683,6 +2705,7 @@ func (m Model) renderHistoryPane(width, height int) string {
 		Height:     height,
 		Focused:    m.focus == FocusMain,
 		SoftCursor: true,
+		MuteCols:   []int{histColPath},
 		CellStyle: func(row, col int, text string) (string, bool) {
 			return styleCommitGraphCell(row, col, text, row == m.historyCursor && m.focus == FocusMain)
 		},

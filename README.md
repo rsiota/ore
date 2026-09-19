@@ -30,7 +30,7 @@ Commit grid is columnar (sort + column-scoped `/`). Ex commands (`:blame`, `:his
 | `:G <regexp>` | Commits matching a regexp pickaxe (`git log -G`) |
 | `:nohl` | Clear pickaxe match highlighting (keeps the results grid) |
 | `:evolve` | Line evolution stack for the selected blame line (`F`) |
-| `:history <path>` | Path history with rename follow |
+| `:history <path>` | Path history with rename follow + “was / moved from” edges |
 | `:goto <hash>` | Jump to commit (prefix match) |
 | `:theme [light|dark]` | Switch colour theme (persisted) |
 | `:set transparent_background [on|off]` | Leave terminal background unpainted |

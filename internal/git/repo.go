@@ -141,16 +141,6 @@ func (r *Repo) CommitLog(ctx context.Context, opt LogOptions) ([]Commit, error) 
 	return parseCommitLog(out)
 }
 
-// FileHistory returns commits that touched path, following renames (--follow).
-func (r *Repo) FileHistory(ctx context.Context, path string, opt LogOptions) ([]Commit, error) {
-	if path == "" {
-		return nil, fmt.Errorf("path required")
-	}
-	opt.Path = path
-	opt.Follow = true
-	return r.CommitLog(ctx, opt)
-}
-
 func parseCommitLog(out []byte) ([]Commit, error) {
 	raw := string(out)
 	if raw == "" {
@@ -163,31 +153,11 @@ func parseCommitLog(out []byte) ([]Commit, error) {
 		if rec == "" {
 			continue
 		}
-		parts := strings.Split(rec, fieldSep)
-		if len(parts) < 7 {
-			return nil, fmt.Errorf("unexpected log record: %q", rec)
-		}
-		ts, err := time.Parse(time.RFC3339, parts[4])
+		c, err := parseCommitMeta(rec)
 		if err != nil {
-			// Fall back for odd git date formats.
-			ts, err = time.Parse("2006-01-02T15:04:05-07:00", parts[4])
-			if err != nil {
-				return nil, fmt.Errorf("parse date %q: %w", parts[4], err)
-			}
+			return nil, err
 		}
-		var parents []string
-		if parts[6] != "" {
-			parents = strings.Fields(parts[6])
-		}
-		commits = append(commits, Commit{
-			Hash:      parts[0],
-			ShortHash: parts[1],
-			Author:    parts[2],
-			Email:     parts[3],
-			Date:      ts,
-			Subject:   parts[5],
-			Parents:   parents,
-		})
+		commits = append(commits, c)
 	}
 	return commits, nil
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/rsiota/ore/internal/git"
 	"github.com/rsiota/ore/internal/session"
 )
 
@@ -93,11 +94,26 @@ func (m Model) selectedFilePath() string {
 }
 
 func (m Model) selectedHistoryHash() string {
-	idx := m.historyIndices()
-	if m.historyCursor >= 0 && m.historyCursor < len(idx) {
-		return m.history[idx[m.historyCursor]].Hash
+	if pc, ok := m.selectedHistory(); ok {
+		return pc.Hash
 	}
 	return ""
+}
+
+func (m Model) selectedHistory() (git.PathCommit, bool) {
+	idx := m.historyIndices()
+	if m.historyCursor >= 0 && m.historyCursor < len(idx) {
+		return m.history[idx[m.historyCursor]], true
+	}
+	return git.PathCommit{}, false
+}
+
+func (m Model) selectedBlameLine() (git.BlameLine, bool) {
+	idx := m.blameIndices()
+	if m.blameCursor >= 0 && m.blameCursor < len(idx) {
+		return m.blame[idx[m.blameCursor]], true
+	}
+	return git.BlameLine{}, false
 }
 
 func (m *Model) saveSession() {
@@ -209,7 +225,7 @@ func (m *Model) continueSessionRestore() tea.Cmd {
 		}
 		m.restoreAfterHistory = true
 		m.historyPath = st.Path
-		m.historyCol = commitColHash
+		m.historyCol = histColHash
 		m.historySortCol = -1
 		m.historySortDir = SortNone
 		m.loadingHistory = true
@@ -222,7 +238,7 @@ func (m *Model) continueSessionRestore() tea.Cmd {
 		if strings.EqualFold(st.BlameFrom, "history") {
 			m.restoreAfterHistory = true
 			m.historyPath = st.Path
-			m.historyCol = commitColHash
+			m.historyCol = histColHash
 			m.historySortCol = -1
 			m.historySortDir = SortNone
 			m.loadingHistory = true
@@ -281,10 +297,14 @@ func (m *Model) finishRestoreHistory() tea.Cmd {
 		if rev == "" {
 			rev = st.Commit
 		}
+		path := st.Path
+		if pc, ok := m.selectedHistory(); ok && pc.Path != "" {
+			path = pc.Path
+		}
 		m.blamePreferLine = st.BlameLine
 		m.clearSessionRestore()
-		m.status = fmt.Sprintf("restored · blame %s", st.Path)
-		return m.startBlame(st.Path, rev, MainHistory)
+		m.status = fmt.Sprintf("restored · blame %s", path)
+		return m.startBlame(path, rev, MainHistory)
 	}
 	m.clearSessionRestore()
 	m.refreshStatus()

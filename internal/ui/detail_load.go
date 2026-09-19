@@ -93,6 +93,9 @@ func (m *Model) detailPathForView() string {
 			return m.files[idx[m.fileCursor]].Path
 		}
 	case MainHistory:
+		if pc, ok := m.selectedHistory(); ok && pc.Path != "" {
+			return pc.Path
+		}
 		return m.historyPath
 	case MainBlame:
 		return m.blamePath
