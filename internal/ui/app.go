@@ -451,6 +451,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case yankFlashTickMsg:
+		if m.yank.AdvanceFlash() {
+			return m, yankFlashTickCmd()
+		}
+		return m, nil
+
 	case historyLoadedMsg:
 		m.loadingHistory = false
 		if msg.path != m.historyPath {

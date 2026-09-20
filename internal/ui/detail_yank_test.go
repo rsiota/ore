@@ -105,6 +105,36 @@ func TestEnterLeaveDetailYank(t *testing.T) {
 	}
 }
 
+func TestYankFlashToggles(t *testing.T) {
+	var y detailYank
+	y.startFlash(lineFlashRegion(2, 0))
+	if !y.flashActive || y.flashOn {
+		t.Fatalf("flash should start off: active=%v on=%v", y.flashActive, y.flashOn)
+	}
+	// off → on
+	if !y.AdvanceFlash() || !y.flashOn || !y.flashActive {
+		t.Fatal("first tick should turn flash on")
+	}
+	// on → off / done
+	if y.AdvanceFlash() || y.flashActive {
+		t.Fatal("second tick should clear the flash")
+	}
+}
+
+func TestYankFlashKeepsLineRange(t *testing.T) {
+	var y detailYank
+	y.startFlash(detailYank{
+		visual: yankVisualLine, anchorRow: 1, row: 4, col: 0, anchorCol: 0,
+	})
+	f := y.flashSelection()
+	if f.anchorRow != 1 || f.row != 4 {
+		t.Fatalf("line flash range = %d..%d, want 1..4", f.anchorRow, f.row)
+	}
+	if !yankRowSelected(f, 2) || !yankRowSelected(f, 4) || yankRowSelected(f, 0) {
+		t.Fatalf("expected mid/end rows selected: %#v", f)
+	}
+}
+
 func TestYankEscPeelsVisualFirst(t *testing.T) {
 	m := Model{focus: FocusDetail, width: 80, height: 24, detailCache: &detailRenderCache{}}
 	m.yank.visual = yankVisualLine

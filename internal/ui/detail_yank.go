@@ -48,7 +48,23 @@ type detailYank struct {
 	search       string
 	lastSearch   string
 	register     string // last yanked text (creel-style internal register)
+
+	// Copy flash (creel cell-flash shape): soft wash toggles over the yanked region.
+	flashActive bool
+	flashOn     bool
+	flashTicks  int
+	flashVisual yankVisual
+	flashAR     int
+	flashAC     int
+	flashR      int
+	flashC      int
 }
+
+// Yank region flash: off → on → off so the pulse is visible after visual clears.
+const (
+	yankFlashInterval  = 120 // ms per beat
+	yankFlashTickCount = 2   // start off; tick1 on; tick2 clear
+)
 
 func (y *detailYank) reset() {
 	reg := y.register
@@ -59,6 +75,55 @@ func (y *detailYank) clearChord() {
 	y.chordG = false
 	y.pending = yankPendingNone
 	y.pendingFind = false
+}
+
+func (y *detailYank) clearFlash() {
+	y.flashActive = false
+	y.flashOn = false
+	y.flashTicks = 0
+}
+
+func (y *detailYank) startFlash(sel detailYank) {
+	vis := sel.visual
+	if vis == yankVisualNone {
+		vis = yankVisualLine
+	}
+	y.flashActive = true
+	y.flashOn = false // beat 1: off (gap after visual deselect)
+	y.flashTicks = yankFlashTickCount
+	y.flashVisual = vis
+	y.flashAR, y.flashAC = sel.anchorRow, sel.anchorCol
+	y.flashR, y.flashC = sel.row, sel.col
+	if vis == yankVisualLine {
+		// Keep the full anchor→cursor row span; only normalize cols.
+		y.flashAC, y.flashC = 0, 0
+	}
+}
+
+func (y *detailYank) flashSelection() detailYank {
+	return detailYank{
+		visual:    y.flashVisual,
+		anchorRow: y.flashAR,
+		anchorCol: y.flashAC,
+		row:       y.flashR,
+		col:       y.flashC,
+	}
+}
+
+// AdvanceFlash steps off→on→off. Returns whether another tick is needed.
+func (y *detailYank) AdvanceFlash() bool {
+	if !y.flashActive {
+		return false
+	}
+	y.flashTicks--
+	if y.flashTicks <= 0 {
+		// beat 3: off / done
+		y.clearFlash()
+		return false
+	}
+	// beat 2: on
+	y.flashOn = true
+	return true
 }
 
 func (y *detailYank) modeLabel() string {
@@ -379,6 +444,38 @@ func searchBackward(lines []string, row, col int, query string) (int, int, bool)
 	}
 }
 
+func wordFlashRegion(lines []string, row, col int) detailYank {
+	row, col = clampYankPos(lines, row, col)
+	rs := lineRunes(lines[row])
+	if len(rs) == 0 {
+		return detailYank{visual: yankVisualChar, row: row, col: 0, anchorRow: row, anchorCol: 0}
+	}
+	lo, hi := col, col
+	if isWordChar(rs[col]) {
+		for lo > 0 && isWordChar(rs[lo-1]) {
+			lo--
+		}
+		for hi+1 < len(rs) && isWordChar(rs[hi+1]) {
+			hi++
+		}
+	}
+	return detailYank{visual: yankVisualChar, row: row, col: hi, anchorRow: row, anchorCol: lo}
+}
+
+func restFlashRegion(lines []string, row, col int) detailYank {
+	row, col = clampYankPos(lines, row, col)
+	rs := lineRunes(lines[row])
+	hi := col
+	if len(rs) > 0 {
+		hi = len(rs) - 1
+	}
+	return detailYank{visual: yankVisualChar, row: row, col: hi, anchorRow: row, anchorCol: col}
+}
+
+func lineFlashRegion(row, col int) detailYank {
+	return detailYank{visual: yankVisualLine, row: row, col: col, anchorRow: row, anchorCol: 0}
+}
+
 func wordAtCursor(lines []string, row, col int) string {
 	row, col = clampYankPos(lines, row, col)
 	rs := lineRunes(lines[row])
@@ -511,11 +608,17 @@ func runeDisplayCol(plain string, i int) int {
 }
 
 // paintYankOnStyled keeps the normal detail highlighting and only overlays
-// visual-mode selection plus a reverse block cursor.
+// visual-mode selection (or a post-yank flash wash) plus a reverse block cursor.
 func paintYankOnStyled(styled, plain string, width, row int, y detailYank) string {
 	line := styled
-	if y.visual != yankVisualNone && yankRowSelected(y, row) {
+	switch {
+	case y.visual != yankVisualNone && yankRowSelected(y, row):
 		line = paintYankVisual(styled, plain, width, row, y)
+	case y.flashActive && y.flashOn:
+		f := y.flashSelection()
+		if yankRowSelected(f, row) {
+			line = paintYankVisual(styled, plain, width, row, f)
+		}
 	}
 	if row == y.row {
 		line = overlayYankCursor(line, plain, y.col)

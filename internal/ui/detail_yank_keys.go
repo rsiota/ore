@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"time"
 	"unicode/utf8"
 
 	"github.com/atotto/clipboard"
@@ -33,6 +34,7 @@ func (m *Model) enterDetailYank() {
 
 func (m *Model) leaveDetailYank() {
 	m.yank.clearChord()
+	m.yank.clearFlash()
 	m.yank.visual = yankVisualNone
 	m.yank.searchTyping = false
 	m.yank.search = ""
@@ -55,19 +57,31 @@ func (m *Model) ensureYankVisible(viewH int) {
 	}
 }
 
-func (m *Model) commitYank(text string) tea.Cmd {
+type yankFlashTickMsg struct{}
+
+func yankFlashTickCmd() tea.Cmd {
+	return tea.Tick(time.Duration(yankFlashInterval)*time.Millisecond, func(time.Time) tea.Msg {
+		return yankFlashTickMsg{}
+	})
+}
+
+func (m *Model) commitYank(text string, flash detailYank) tea.Cmd {
 	if text == "" {
 		m.status = "yank · empty"
 		return nil
 	}
 	m.yank.register = text
+	m.yank.startFlash(flash)
 	n := utf8.RuneCountInString(text)
 	m.yank.visual = yankVisualNone
 	m.yank.clearChord()
-	return func() tea.Msg {
-		err := clipboard.WriteAll(text)
-		return yankCopiedMsg{n: n, err: err}
-	}
+	return tea.Batch(
+		func() tea.Msg {
+			err := clipboard.WriteAll(text)
+			return yankCopiedMsg{n: n, err: err}
+		},
+		yankFlashTickCmd(),
+	)
 }
 
 func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -132,14 +146,26 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.yank.pending = yankPendingNone
 		switch key {
 		case "y":
-			return m, m.commitYank(yankSelection(lines, detailYank{row: m.yank.row, col: m.yank.col, visual: yankVisualNone}))
+			return m, m.commitYank(
+				yankSelection(lines, detailYank{row: m.yank.row, col: m.yank.col, visual: yankVisualNone}),
+				lineFlashRegion(m.yank.row, m.yank.col),
+			)
 		case "w":
-			return m, m.commitYank(wordAtCursor(lines, m.yank.row, m.yank.col))
+			return m, m.commitYank(
+				wordAtCursor(lines, m.yank.row, m.yank.col),
+				wordFlashRegion(lines, m.yank.row, m.yank.col),
+			)
 		case "$":
-			return m, m.commitYank(restOfLine(lines, m.yank.row, m.yank.col))
+			return m, m.commitYank(
+				restOfLine(lines, m.yank.row, m.yank.col),
+				restFlashRegion(lines, m.yank.row, m.yank.col),
+			)
 		}
 		// Unknown motion after y — treat as line yank (creel fallthrough).
-		return m, m.commitYank(yankSelection(lines, detailYank{row: m.yank.row, col: m.yank.col, visual: yankVisualNone}))
+		return m, m.commitYank(
+			yankSelection(lines, detailYank{row: m.yank.row, col: m.yank.col, visual: yankVisualNone}),
+			lineFlashRegion(m.yank.row, m.yank.col),
+		)
 	}
 
 	// g-pending → gg
@@ -186,13 +212,17 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "y":
 		if m.yank.visual != yankVisualNone {
-			return m, m.commitYank(yankSelection(lines, m.yank))
+			flash := m.yank // snapshot selection before commitYank clears visual
+			return m, m.commitYank(yankSelection(lines, m.yank), flash)
 		}
 		m.yank.pending = yankPendingY
 		m.status = "detail · y…"
 		return m, nil
 	case "Y":
-		return m, m.commitYank(yankSelection(lines, detailYank{row: m.yank.row, col: m.yank.col, visual: yankVisualNone}))
+		return m, m.commitYank(
+			yankSelection(lines, detailYank{row: m.yank.row, col: m.yank.col, visual: yankVisualNone}),
+			lineFlashRegion(m.yank.row, m.yank.col),
+		)
 
 	case "/":
 		m.yank.searchTyping = true
