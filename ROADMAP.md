@@ -120,7 +120,8 @@ North star: make **line → previous versions → co-changed regions → authors
 2. [x] **Pickaxe / content-history search** — `git log -S` / `-G` → results grid → blame / follow (`:pickaxe` / `:S` / `:G`)
 3. [x] **Co-change → intersecting commits** — from Often-with (or `:couple`), list commits where paths co-occur
 4. [x] **Rename / move edges everywhere** — “was X” / “moved from Y” in history, blame, and `g r` (not only `--follow`)
-5. [ ] **Bookmarks or detail hunk-walk** — palate cleanser after the graph work (`]`/`[` hunks; named views)
+5. [x] **Detail hunk-walk** — `]`/`[` (and `{`/`}`) jump hunk headers in FocusDetail; zen context stays on main
+5b. [ ] **Bookmarks / named views** — palate cleanser after the graph work
 6. [x] **Readonly code yank browser** — thin vim-like nav in panes that show code (start with **detail**): motions (`hjkl`, `w/b/e`, `0/$`, `gg/G`, optional `f/t` + pane-local `/`), visual char/line (`v`/`V`), `y`/`Y` to clipboard; visible block cursor; clear enter/exit so it doesn’t fight grid keys (`esc` leaves). No insert, no mutating operators, no creel-scale vim engine. Blame code column only after detail proves the focus model.
 
 Later (when the above feels sticky): hunk-centric mode, soft DAG jumps (parent/child/merge-base), timeline strip, quiet ownership summary in `g r`, export provenance trail, large-repo caching. Keep AI/charts/PR links optional and thin.

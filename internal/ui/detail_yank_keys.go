@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"time"
 	"unicode/utf8"
 
@@ -82,6 +83,41 @@ func (m *Model) commitYank(text string, flash detailYank) tea.Cmd {
 		},
 		yankFlashTickCmd(),
 	)
+}
+
+// jumpDetailHunk moves to the previous (dir<0) or next (dir>0) diff hunk header
+// in the detail pane. Bound to [ / ] (and { / }) while FocusDetail.
+func (m *Model) jumpDetailHunk(dir int) tea.Cmd {
+	lines := m.detailYankLines()
+	hunks := detailHunkRows(lines)
+	if len(hunks) == 0 {
+		m.status = "detail · no hunks"
+		return nil
+	}
+	viewH := max(1, m.detailViewHeight())
+	cur := m.yank.row
+	var (
+		row int
+		ok  bool
+	)
+	if dir < 0 {
+		row, ok = prevHunkRow(hunks, cur)
+		if !ok {
+			m.status = fmt.Sprintf("detail · hunk 1/%d · top", len(hunks))
+			return nil
+		}
+	} else {
+		row, ok = nextHunkRow(hunks, cur)
+		if !ok {
+			m.status = fmt.Sprintf("detail · hunk %d/%d · bottom", len(hunks), len(hunks))
+			return nil
+		}
+	}
+	m.yank.row, m.yank.col = clampYankPos(lines, row, 0)
+	m.ensureYankVisible(viewH)
+	ord := hunkOrdinal(hunks, m.yank.row)
+	m.status = fmt.Sprintf("detail · hunk %d/%d", ord, len(hunks))
+	return nil
 }
 
 func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -278,6 +314,11 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+
+	case "[", "{":
+		return m, m.jumpDetailHunk(-1)
+	case "]", "}":
+		return m, m.jumpDetailHunk(1)
 
 	case "h", "left":
 		m.yank.row, m.yank.col = moveLeft(lines, m.yank.row, m.yank.col)

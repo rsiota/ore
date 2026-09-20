@@ -163,3 +163,64 @@ func TestPaintYankKeepsHighlightOutsideVisual(t *testing.T) {
 		t.Fatal("visual line should still show text")
 	}
 }
+
+func TestJumpDetailHunk(t *testing.T) {
+	diff := strings.Join([]string{
+		"diff --git a/f b/f",
+		"--- a/f",
+		"+++ b/f",
+		"@@ -1,2 +1,2 @@ top",
+		" a",
+		"-b",
+		"+B",
+		"@@ -20,2 +20,2 @@ bottom",
+		" c",
+		"-d",
+		"+D",
+	}, "\n")
+	m := Model{
+		focus:      FocusDetail,
+		width:      120,
+		height:     40,
+		diffMode:   DiffZen,
+		zenContext: 3,
+		detail: &git.CommitDetail{
+			Commit: git.Commit{Hash: "h", Subject: "s", Files: 1},
+			Diff:   diff,
+		},
+		detailCache: &detailRenderCache{},
+	}
+	m.enterDetailYank()
+	mm, _ := m.handleDetailKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	m = mm.(Model)
+	hunks := detailHunkRows(m.detailYankLines())
+	if len(hunks) < 2 {
+		t.Fatalf("expected >=2 hunks, got %v from %#v", hunks, m.detailYankLines())
+	}
+	if m.yank.row != hunks[0] {
+		t.Fatalf("] from top should land on first hunk: row=%d want=%d", m.yank.row, hunks[0])
+	}
+	mm, _ = m.handleDetailKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	m = mm.(Model)
+	if m.yank.row != hunks[1] {
+		t.Fatalf("] should land on second hunk: row=%d want=%d", m.yank.row, hunks[1])
+	}
+	mm, _ = m.handleDetailKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
+	m = mm.(Model)
+	if m.yank.row != hunks[0] {
+		t.Fatalf("[ should return to first hunk: row=%d want=%d", m.yank.row, hunks[0])
+	}
+
+	m.diffMode = DiffUnified
+	m.invalidateDetailCache()
+	m.enterDetailYank()
+	uh := detailHunkRows(m.detailYankLines())
+	if len(uh) < 2 {
+		t.Fatalf("unified expected >=2 hunks, got %v", uh)
+	}
+	mm, _ = m.handleDetailKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	m = mm.(Model)
+	if m.yank.row != uh[0] {
+		t.Fatalf("unified ] first hunk: row=%d want=%d", m.yank.row, uh[0])
+	}
+}

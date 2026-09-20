@@ -115,6 +115,8 @@ func registry() []Section {
 				{"n / N", []string{"n", "N"}, "next / previous search match", ""},
 				{"v / V", []string{"v", "V"}, "visual char / line", "v/V"},
 				{"y / Y", []string{"y", "Y"}, "yank selection / line (yy yw y$)", "y"},
+				{"[/]", []string{"[", "]"}, "previous / next hunk", "[/]"},
+				{"{/}", []string{"{", "}"}, "previous / next hunk", ""},
 				{"esc", []string{"esc"}, "leave visual, then leave detail", "esc"},
 			},
 		},
