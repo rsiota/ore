@@ -15,6 +15,7 @@ internal/git/      repository access (CLI wrappers)
 internal/ui/       Bubble Tea UI
 internal/config/   config directory helpers
 internal/session/  per-repo workspace restore
+internal/bookmarks/ per-repo named views
 internal/version/  ldflags version string
 ```
 
@@ -31,3 +32,4 @@ internal/version/  ldflags version string
 - Ex commands: `:` opens a vim-style prompt; `exCommands()` drives dispatch and the help Commands list (`:blame`, `:history`, `:goto`, `:theme`, `:session`, …).
 - Themes: `light` (default) and `dark` palettes via `applyTheme`; `:theme` switches live and writes `theme:` to config. View paints theme `bg` so light stays readable on dark terminals; `:set transparent_background on` skips that paint so the terminal’s own background / transparency shows through.
 - Session restore: quit / `:q` writes `~/.config/ore/sessions/<repo>.json` (view tip, main pane, commit, path, blame line, diff chrome). Reopen restores asynchronously after the commit log loads; `:session clear` drops it.
+- Bookmarks: per-repo named views in `~/.config/ore/bookmarks/` (creel-style fuzzy popup). `m` / `:bookmark [name]` saves the current session snapshot; `g m` / `ctrl+g` / `:bookmarks` opens the panel; Enter jumps via the same restore path as sessions; `d` deletes.

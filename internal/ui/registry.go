@@ -41,6 +41,8 @@ func registry() []Section {
 				{"j/k · ↑/↓", []string{"j", "k", "up", "down"}, "move row", "j/k"},
 				{"g g / G", []string{"g", "G"}, "top / bottom", "gg/G"},
 				{"g b", []string{"g", "b"}, "switch viewed branch (read-only)", "gb"},
+				{"g m / ctrl+g", []string{"g", "m", "ctrl+g"}, "open bookmarks", "gm"},
+				{"m", []string{"m"}, "bookmark current view", "m"},
 				{"g r", []string{"g", "r"}, "relationship explorer", "gr"},
 				{"ctrl+d / ctrl+u", []string{"ctrl+d", "ctrl+u"}, "page down / up", ""},
 				{"enter", []string{"enter"}, "open (commit→files→history; history→blame)", "enter"},

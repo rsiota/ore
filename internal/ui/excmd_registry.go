@@ -119,6 +119,22 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"bookmark", "bm"},
+			desc:  "bookmark the current view (optional name)",
+			usage: ":bookmark [name]",
+			run: func(m *Model, args []string) tea.Cmd {
+				return m.exBookmark(args)
+			},
+		},
+		{
+			verbs: []string{"bookmarks", "marks"},
+			desc:  "toggle the bookmarks panel (or clear)",
+			usage: ":bookmarks [clear]",
+			run: func(m *Model, args []string) tea.Cmd {
+				return m.exBookmarks(args)
+			},
+		},
+		{
 			verbs: []string{"session"},
 			desc:  "save, clear, or show the restored workspace session",
 			usage: ":session [save|clear]",

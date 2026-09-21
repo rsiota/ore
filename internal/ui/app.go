@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/rsiota/ore/internal/bookmarks"
 	"github.com/rsiota/ore/internal/config"
 	"github.com/rsiota/ore/internal/git"
 	"github.com/rsiota/ore/internal/session"
@@ -143,9 +144,10 @@ type Model struct {
 	head    string
 	viewRev string // read-only log tip; empty = worktree HEAD
 
-	help     HelpPanel
-	palette  palette
-	branches branchPicker
+	help      HelpPanel
+	palette   palette
+	branches  branchPicker
+	bookmarks bookmarkPanel
 
 	filterTyping bool
 	filter       string // applied / live query
@@ -167,10 +169,11 @@ type Model struct {
 	transparentBg bool   // skip theme bg paint (terminal transparency)
 	config        *config.Config
 
-	sessionStore        *session.Store
-	pendingRestore      *session.State
-	restoreAfterFiles   bool
-	restoreAfterHistory bool
+	sessionStore         *session.Store
+	bookmarkStore        *bookmarks.Store
+	pendingRestore       *session.State
+	restoreAfterFiles    bool
+	restoreAfterHistory  bool
 	sessionKeepBlameFold bool // keep gutter fold from session across blame load
 }
 
@@ -188,6 +191,7 @@ func New(repo *git.Repo) Model {
 
 	configDir, _ := config.Dir()
 	store := session.NewStore(configDir)
+	bmStore := bookmarks.NewStore(configDir)
 	m := Model{
 		repo:           repo,
 		focus:          FocusMain,
@@ -206,6 +210,7 @@ func New(repo *git.Repo) Model {
 		transparentBg:  cfg.TransparentBackground,
 		config:         cfg,
 		sessionStore:   store,
+		bookmarkStore:  bmStore,
 	}
 	if st, err := store.Load(repo.Path); err == nil && st.HasContent() {
 		cp := st
@@ -455,6 +460,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.yank.AdvanceFlash() {
 			return m, yankFlashTickCmd()
 		}
+		return m, nil
+
+	case bookmarkPickedMsg:
+		return m, m.jumpBookmark(msg.bm.View)
+
+	case bookmarkDeleteReqMsg:
+		m.deleteSelectedBookmark()
 		return m, nil
 
 	case historyLoadedMsg:
@@ -720,8 +732,14 @@ func (m Model) selectedHash() string {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Stage hint flash before overlay / dispatch so the status bar can light
 	// the pressed key (and its description) on the next paint.
-	if !m.exTyping && !m.filterTyping && !m.help.Visible() && !m.palette.IsVisible() && !m.branches.IsVisible() {
+	if !m.exTyping && !m.filterTyping && !m.help.Visible() && !m.palette.IsVisible() && !m.branches.IsVisible() && !m.bookmarks.IsVisible() {
 		m.stageHintFlash(msg.String())
+	}
+
+	if m.bookmarks.IsVisible() {
+		var cmd tea.Cmd
+		m.bookmarks, cmd = m.bookmarks.Update(msg)
+		return m, cmd
 	}
 
 	if m.branches.IsVisible() {
@@ -767,8 +785,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+p" {
 			m.leaveDetailYank()
 			m.branches.Hide()
+			m.bookmarks.Hide()
 			m.palette.Open()
 			m.status = "command palette"
+			return m, nil
+		}
+		if msg.String() == "ctrl+g" {
+			m.toggleBookmarks()
+			return m, nil
+		}
+		if msg.String() == "m" {
+			m.addBookmark("")
 			return m, nil
 		}
 		return m.handleDetailKeys(msg)
@@ -780,6 +807,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+p":
 		m.chordG = false
 		m.branches.Hide()
+		m.bookmarks.Hide()
 		m.palette.Open()
 		m.status = "command palette"
 		return m, nil
@@ -832,6 +860,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+r":
 		m.chordG = false
 		return m, m.refresh()
+	case "ctrl+g":
+		m.chordG = false
+		m.toggleBookmarks()
+		return m, nil
+	case "m":
+		if m.chordG {
+			m.chordG = false
+			m.toggleBookmarks()
+			return m, nil
+		}
+		m.addBookmark("")
+		return m, nil
 	case "tab":
 		m.chordG = false
 		return m.cycleFocus()
@@ -1264,6 +1304,9 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.openRelations()
 		case "b":
 			return m, m.openBranchPicker()
+		case "m":
+			m.toggleBookmarks()
+			return m, nil
 		case "g", "home":
 			return m.gotoMainTop()
 		case "f":
@@ -1275,9 +1318,9 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key == "g" {
 		m.chordG = true
-		m.status = "g · g top · b branch · r relations"
+		m.status = "g · g top · b branch · m bookmarks · r relations"
 		if m.main == MainBlame {
-			m.status = "g · g top · b branch · r relations · f follow"
+			m.status = "g · g top · b branch · m bookmarks · r relations · f follow"
 		}
 		return m, nil
 	}
@@ -2055,6 +2098,7 @@ func (m *Model) refresh() tea.Cmd {
 func (m *Model) openBranchPicker() tea.Cmd {
 	m.chordG = false
 	m.palette.Hide()
+	m.bookmarks.Hide()
 	m.err = ""
 	m.status = "loading branches…"
 	return loadBranchesCmd(m.repo)
@@ -2452,6 +2496,18 @@ func (m Model) View() string {
 			panelY = 0
 		}
 		view = placeOverlay(view, brPanel, panelX, panelY)
+	}
+	if m.bookmarks.IsVisible() {
+		bw, bh := bookmarkPopupDim()
+		bmPanel := m.bookmarks.View(bw, bh)
+		panelW := lipgloss.Width(bmPanel)
+		panelH := lipgloss.Height(bmPanel)
+		panelX := (m.width - panelW) / 2
+		panelY := (m.height - 1 - panelH) / 2
+		if panelY < 0 {
+			panelY = 0
+		}
+		view = placeOverlay(view, bmPanel, panelX, panelY)
 	}
 	return m.paintBg(view)
 }
