@@ -105,21 +105,21 @@ func registry() []Section {
 			},
 		},
 		{
-			Title: "Detail yank",
+			Title: "Yank browser",
 			Items: []Binding{
-				{"tab", []string{"tab"}, "enter / leave detail yank browser", "tab"},
+				{"tab", []string{"tab"}, "enter / leave yank (blame code → detail)", "tab"},
 				{"hjkl", []string{"h", "j", "k", "l"}, "move by character / line", "hjkl"},
 				{"w/b/e", []string{"w", "b", "e"}, "word motions", "w/b/e"},
 				{"0 / $", []string{"0", "$"}, "line start / end", ""},
 				{"g g / G", []string{"g", "G"}, "top / bottom", "gg/G"},
 				{"f/t/F/T", []string{"f", "t", "F", "T"}, "find char on line", ""},
-				{"/", []string{"/"}, "search in detail pane", "/"},
+				{"/", []string{"/"}, "search in yank surface", "/"},
 				{"n / N", []string{"n", "N"}, "next / previous search match", ""},
 				{"v / V", []string{"v", "V"}, "visual char / line", "v/V"},
 				{"y / Y", []string{"y", "Y"}, "yank selection / line (yy yw y$)", "y"},
-				{"[/]", []string{"[", "]"}, "previous / next hunk", "[/]"},
-				{"{/}", []string{"{", "}"}, "previous / next hunk", ""},
-				{"esc", []string{"esc"}, "leave visual, then leave detail", "esc"},
+				{"[/]", []string{"[", "]"}, "previous / next hunk (detail)", "[/]"},
+				{"{/}", []string{"{", "}"}, "previous / next hunk (detail)", ""},
+				{"esc", []string{"esc"}, "leave visual, then leave yank", "esc"},
 			},
 		},
 		{
@@ -214,8 +214,8 @@ func statusHintList(main MainView, explorerOpen bool) []string {
 
 // statusHintListFocus is statusHintList with detail-yank focus awareness.
 func statusHintListFocus(main MainView, explorerOpen bool, focus Focus) []string {
-	if focus == FocusDetail {
-		return hintsForSection("Detail yank")
+	if focus == FocusDetail || focus == FocusBlameYank {
+		return hintsForSection("Yank browser")
 	}
 	return statusHintList(main, explorerOpen)
 }

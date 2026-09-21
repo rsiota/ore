@@ -21,6 +21,7 @@ type Focus int
 const (
 	FocusMain Focus = iota
 	FocusDetail
+	FocusBlameYank
 	FocusExplorer
 )
 
@@ -158,7 +159,7 @@ type Model struct {
 	explorer   RelExplorer
 	loadingRel bool
 
-	yank detailYank // readonly detail yank browser (FocusDetail)
+	yank detailYank // readonly yank browser (FocusDetail / FocusBlameYank)
 
 	// refreshPreferHash, when set, marks commitsLoadedMsg as a refresh rather
 	// than the initial load: restore the commit cursor to this hash and keep
@@ -777,13 +778,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleExplorerKeys(msg)
 	}
 
-	if m.focus == FocusDetail {
-		// Detail yank owns keys (incl. w/esc/h) so they don't fight grid globals.
+	if m.focus == FocusDetail || m.focus == FocusBlameYank {
+		// Yank browsers own keys (incl. w/esc/h) so they don't fight grid globals.
 		if msg.String() == "ctrl+c" || msg.String() == "q" {
 			return m, m.beginQuit()
 		}
 		if msg.String() == "ctrl+p" {
-			m.leaveDetailYank()
+			if m.focus == FocusDetail {
+				m.leaveDetailYank()
+			} else {
+				m.leaveBlameYank()
+			}
 			m.branches.Hide()
 			m.bookmarks.Hide()
 			m.palette.Open()
@@ -797,6 +802,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if msg.String() == "m" {
 			m.addBookmark("")
 			return m, nil
+		}
+		if m.focus == FocusBlameYank {
+			return m.handleBlameYankKeys(msg)
 		}
 		return m.handleDetailKeys(msg)
 	}
@@ -920,6 +928,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleMainKeys(msg)
 	case FocusDetail:
 		return m.handleDetailKeys(msg)
+	case FocusBlameYank:
+		return m.handleBlameYankKeys(msg)
 	}
 	return m, nil
 }
@@ -936,9 +946,17 @@ func (m Model) cycleFocus() (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.focus == FocusMain {
+	switch m.focus {
+	case FocusMain:
+		if m.main == MainBlame {
+			m.enterBlameYank()
+		} else {
+			m.enterDetailYank()
+		}
+	case FocusBlameYank:
+		m.leaveBlameYank()
 		m.enterDetailYank()
-	} else {
+	default:
 		m.leaveDetailYank()
 	}
 	return m, nil
@@ -2520,7 +2538,13 @@ func (m Model) renderStatus() string {
 		return fitWidth(styleFilter.Render(" "+m.filterPrompt())+"  "+styleMuted.Render("enter keep · esc clear"), m.width)
 	}
 
-	leftTab := renderStatusTab(m.mainTitle(), m.focus == FocusMain)
+	leftTitle := m.mainTitle()
+	leftFocused := m.focus == FocusMain
+	if m.focus == FocusBlameYank {
+		leftTitle = m.mainTitle() + " · " + m.yank.modeLabel()
+		leftFocused = true
+	}
+	leftTab := renderStatusTab(leftTitle, leftFocused)
 	rightTitle := "detail"
 	rightFocused := m.focus == FocusDetail
 	if m.focus == FocusDetail {
@@ -2784,10 +2808,11 @@ func (m Model) renderBlamePane(width, height int) string {
 	rows := make([][]string, len(idx))
 	for i := range idx {
 		rows[i] = blameRowDisplay(m.blame, idx, i)
-		active := i == m.blameCursor && m.focus == FocusMain
+		active := i == m.blameCursor && (m.focus == FocusMain || m.focus == FocusBlameYank)
 		rows[i][blameColLine] = blameLineCell(m.blame[idx[i]].Line, active)
 	}
 	newest, oldest := blameAgeRange(m.blame)
+	yanking := m.focus == FocusBlameYank
 	g := Grid{
 		Columns:             blameColumns,
 		Rows:                rows,
@@ -2798,7 +2823,7 @@ func (m Model) renderBlamePane(width, height int) string {
 		SortDir:             m.blameSortDir,
 		Width:               width,
 		Height:              height,
-		Focused:             m.focus == FocusMain,
+		Focused:             m.focus == FocusMain || yanking,
 		NoStripe:            true,
 		SoftCursor:          true,
 		SkipCursorPaintCols: []int{blameColCode},
@@ -2807,8 +2832,17 @@ func (m Model) renderBlamePane(width, height int) string {
 		HiddenCols:          blameHiddenCols(m.blameGutterFold),
 		HScrollCol:          blameColCode,
 		HScroll:             m.blameCodeScroll,
+		PaintCell: func(row, col int, raw string, w int) (string, bool) {
+			if col != blameColCode || (!yanking && !m.yank.flashActive) {
+				return "", false
+			}
+			if yanking || (m.yank.flashActive && m.yank.flashOn) {
+				return m.paintBlameYankCell(row, raw, w), true
+			}
+			return "", false
+		},
 		CellStyle: func(row, col int, text string) (string, bool) {
-			focused := row == m.blameCursor && m.focus == FocusMain
+			focused := row == m.blameCursor && (m.focus == FocusMain || m.focus == FocusBlameYank)
 			switch col {
 			case blameColLine:
 				// Zen gutter grey; active row uses slate so › reads clearly.
@@ -2835,6 +2869,9 @@ func (m Model) renderBlamePane(width, height int) string {
 				}
 				return st.Render(text), true
 			case blameColCode:
+				if yanking {
+					return "", false // PaintCell owns it
+				}
 				if row < 0 || row >= len(idx) {
 					return "", false
 				}

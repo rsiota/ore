@@ -120,10 +120,44 @@ func (m *Model) jumpDetailHunk(dir int) tea.Cmd {
 	return nil
 }
 
+// yankBrowserOpts configures the shared readonly yank key handler for detail
+// or blame-code surfaces.
+type yankBrowserOpts struct {
+	prefix    string
+	lines     []string
+	viewH     int
+	allowHunk bool
+	leave     func(*Model)
+	ensure    func(*Model, int)
+	onTab     func(*Model)
+}
+
 func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	lines := m.detailYankLines()
-	viewH := max(1, m.detailViewHeight())
+	return m.handleYankBrowserKeys(msg, yankBrowserOpts{
+		prefix:    "detail",
+		lines:     m.detailYankLines(),
+		viewH:     max(1, m.detailViewHeight()),
+		allowHunk: true,
+		leave:     (*Model).leaveDetailYank,
+		ensure:    (*Model).ensureYankVisible,
+	})
+}
+
+func (m Model) handleYankBrowserKeys(msg tea.KeyMsg, opts yankBrowserOpts) (tea.Model, tea.Cmd) {
+	lines := opts.lines
+	viewH := opts.viewH
+	if viewH < 1 {
+		viewH = 1
+	}
 	key := msg.String()
+	ensure := func() {
+		if opts.ensure != nil {
+			opts.ensure(&m, viewH)
+		}
+	}
+	statusMode := func() {
+		m.status = opts.prefix + " · " + m.yank.modeLabel()
+	}
 
 	// Pane-local search prompt (creel / layer).
 	if m.yank.searchTyping {
@@ -131,7 +165,7 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc", "ctrl+c":
 			m.yank.searchTyping = false
 			m.yank.search = ""
-			m.status = "detail · " + m.yank.modeLabel()
+			statusMode()
 			return m, nil
 		case "enter":
 			m.yank.lastSearch = m.yank.search
@@ -140,22 +174,22 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.yank.lastSearch != "" {
 				if r, c, ok := searchForward(lines, m.yank.row, m.yank.col, m.yank.lastSearch); ok {
 					m.yank.row, m.yank.col = r, c
-					m.ensureYankVisible(viewH)
+					ensure()
 				}
 			}
-			m.status = "detail · " + m.yank.modeLabel()
+			statusMode()
 			return m, nil
 		case "backspace":
 			rs := []rune(m.yank.search)
 			if len(rs) > 0 {
 				m.yank.search = string(rs[:len(rs)-1])
 			}
-			m.status = "detail /" + m.yank.search + "█"
+			m.status = opts.prefix + " /" + m.yank.search + "█"
 			return m, nil
 		}
 		if len(msg.Runes) == 1 && !msg.Alt && msg.Type == tea.KeyRunes {
 			m.yank.search += string(msg.Runes)
-			m.status = "detail /" + m.yank.search + "█"
+			m.status = opts.prefix + " /" + m.yank.search + "█"
 			return m, nil
 		}
 		return m, nil
@@ -171,7 +205,7 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.yank.lastFindBack = m.yank.findBack
 			if r, c, ok := findOnLine(lines, m.yank.row, m.yank.col, ch, m.yank.findTill, m.yank.findBack); ok {
 				m.yank.row, m.yank.col = r, c
-				m.ensureYankVisible(viewH)
+				ensure()
 			}
 		}
 		return m, nil
@@ -209,7 +243,7 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.yank.chordG = false
 		if key == "g" {
 			m.yank.row, m.yank.col = clampYankPos(lines, 0, m.yank.col)
-			m.ensureYankVisible(viewH)
+			ensure()
 		}
 		return m, nil
 	}
@@ -218,13 +252,21 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if m.yank.visual != yankVisualNone {
 			m.yank.visual = yankVisualNone
-			m.status = "detail · " + m.yank.modeLabel()
+			statusMode()
 			return m, nil
 		}
-		m.leaveDetailYank()
+		if opts.leave != nil {
+			opts.leave(&m)
+		}
 		return m, nil
 	case "tab":
-		m.leaveDetailYank()
+		if opts.onTab != nil {
+			opts.onTab(&m)
+			return m, nil
+		}
+		if opts.leave != nil {
+			opts.leave(&m)
+		}
 		return m, nil
 
 	case "v":
@@ -234,7 +276,7 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.yank.visual = yankVisualChar
 			m.yank.anchorRow, m.yank.anchorCol = m.yank.row, m.yank.col
 		}
-		m.status = "detail · " + m.yank.modeLabel()
+		statusMode()
 		return m, nil
 	case "V":
 		if m.yank.visual == yankVisualLine {
@@ -243,7 +285,7 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.yank.visual = yankVisualLine
 			m.yank.anchorRow, m.yank.anchorCol = m.yank.row, m.yank.col
 		}
-		m.status = "detail · " + m.yank.modeLabel()
+		statusMode()
 		return m, nil
 
 	case "y":
@@ -252,7 +294,7 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.commitYank(yankSelection(lines, m.yank), flash)
 		}
 		m.yank.pending = yankPendingY
-		m.status = "detail · y…"
+		m.status = opts.prefix + " · y…"
 		return m, nil
 	case "Y":
 		return m, m.commitYank(
@@ -263,13 +305,13 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.yank.searchTyping = true
 		m.yank.search = ""
-		m.status = "detail /█"
+		m.status = opts.prefix + " /█"
 		return m, nil
 	case "n":
 		if m.yank.lastSearch != "" {
 			if r, c, ok := searchForward(lines, m.yank.row, m.yank.col, m.yank.lastSearch); ok {
 				m.yank.row, m.yank.col = r, c
-				m.ensureYankVisible(viewH)
+				ensure()
 			}
 		}
 		return m, nil
@@ -277,7 +319,7 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.yank.lastSearch != "" {
 			if r, c, ok := searchBackward(lines, m.yank.row, m.yank.col, m.yank.lastSearch); ok {
 				m.yank.row, m.yank.col = r, c
-				m.ensureYankVisible(viewH)
+				ensure()
 			}
 		}
 		return m, nil
@@ -302,7 +344,7 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.yank.lastFind != 0 {
 			if r, c, ok := findOnLine(lines, m.yank.row, m.yank.col, m.yank.lastFind, m.yank.lastFindTill, m.yank.lastFindBack); ok {
 				m.yank.row, m.yank.col = r, c
-				m.ensureYankVisible(viewH)
+				ensure()
 			}
 		}
 		return m, nil
@@ -310,15 +352,21 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.yank.lastFind != 0 {
 			if r, c, ok := findOnLine(lines, m.yank.row, m.yank.col, m.yank.lastFind, m.yank.lastFindTill, !m.yank.lastFindBack); ok {
 				m.yank.row, m.yank.col = r, c
-				m.ensureYankVisible(viewH)
+				ensure()
 			}
 		}
 		return m, nil
 
 	case "[", "{":
-		return m, m.jumpDetailHunk(-1)
+		if opts.allowHunk {
+			return m, m.jumpDetailHunk(-1)
+		}
+		return m, nil
 	case "]", "}":
-		return m, m.jumpDetailHunk(1)
+		if opts.allowHunk {
+			return m, m.jumpDetailHunk(1)
+		}
+		return m, nil
 
 	case "h", "left":
 		m.yank.row, m.yank.col = moveLeft(lines, m.yank.row, m.yank.col)
@@ -354,6 +402,6 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
-	m.ensureYankVisible(viewH)
+	ensure()
 	return m, nil
 }

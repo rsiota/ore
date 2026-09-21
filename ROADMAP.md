@@ -105,7 +105,7 @@ Analogous to creel’s FK explorer:
 - [ ] Timeline / churn strip
 - [x] Session restore (repo + view + file + commit)
 - [x] Bookmarks / named views (commits, files, blame lines)
-- [x] Readonly code yank browser (detail-first; see Next up #6)
+- [x] Readonly code yank browser (detail + blame code column)
 - [ ] Charts (`M` / `:bar` churn, author frequency) — optional
 - [ ] AI assist (optional, creel `Ctrl+F` shape): explain evolution, summarize range
 - [ ] Packaging (GoReleaser, brew/scoop/AUR) when ready to publish
@@ -122,7 +122,7 @@ North star: make **line → previous versions → co-changed regions → authors
 4. [x] **Rename / move edges everywhere** — “was X” / “moved from Y” in history, blame, and `g r` (not only `--follow`)
 5. [x] **Detail hunk-walk** — `]`/`[` (and `{`/`}`) jump hunk headers in FocusDetail; zen context stays on main
 5b. [x] **Bookmarks / named views** — `m` save, `g m` / `ctrl+g` / `:bookmarks` fuzzy popup; jump reuses session restore
-6. [x] **Readonly code yank browser** — thin vim-like nav in panes that show code (start with **detail**): motions (`hjkl`, `w/b/e`, `0/$`, `gg/G`, optional `f/t` + pane-local `/`), visual char/line (`v`/`V`), `y`/`Y` to clipboard; visible block cursor; clear enter/exit so it doesn’t fight grid keys (`esc` leaves). No insert, no mutating operators, no creel-scale vim engine. Blame code column only after detail proves the focus model.
+6. [x] **Readonly code yank browser** — thin vim-like nav in panes that show code (**detail** + **blame code column**): motions (`hjkl`, `w/b/e`, `0/$`, `gg/G`, optional `f/t` + pane-local `/`), visual char/line (`v`/`V`), `y`/`Y` to clipboard; visible block cursor; clear enter/exit so it doesn’t fight grid keys (`esc` leaves). No insert, no mutating operators, no creel-scale vim engine. On blame, `Tab` enters code yank then detail.
 
 Later (when the above feels sticky): hunk-centric mode, soft DAG jumps (parent/child/merge-base), timeline strip, quiet ownership summary in `g r`, export provenance trail, large-repo caching. Keep AI/charts/PR links optional and thin.
 

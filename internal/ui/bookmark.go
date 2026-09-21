@@ -50,6 +50,9 @@ func (m *Model) toggleBookmarks() {
 	if m.focus == FocusDetail {
 		m.leaveDetailYank()
 	}
+	if m.focus == FocusBlameYank {
+		m.leaveBlameYank()
+	}
 	entries, err := m.bookmarkStore.Get(m.repo.Path)
 	if err != nil {
 		m.status = "bookmarks: " + err.Error()
@@ -84,6 +87,9 @@ func (m *Model) deleteSelectedBookmark() {
 func (m *Model) jumpBookmark(st session.State) tea.Cmd {
 	if m.focus == FocusDetail {
 		m.leaveDetailYank()
+	}
+	if m.focus == FocusBlameYank {
+		m.leaveBlameYank()
 	}
 	if m.explorer.Opened() {
 		m.explorer.Close()

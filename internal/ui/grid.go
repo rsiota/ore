@@ -79,6 +79,9 @@ type Grid struct {
 	HiddenCols []int
 	// CellStyle styles a non-cursor cell. ok=true replaces the default plain/stripe look.
 	CellStyle func(row, col int, text string) (styled string, ok bool)
+	// PaintCell fully owns a cell (including padding) for the column width.
+	// Used by blame-code yank so the cursor can track the full line under HScroll.
+	PaintCell func(row, col int, raw string, width int) (styled string, ok bool)
 }
 
 // SetSize updates the viewport.
@@ -397,6 +400,12 @@ func (g Grid) renderRow(rowIdx int) string {
 		val := ""
 		if i < len(row) {
 			val = row[i]
+		}
+		if g.PaintCell != nil {
+			if styled, ok := g.PaintCell(rowIdx, i, val, g.widthAt(i)); ok {
+				parts[i] = fitWidth(styled, g.widthAt(i))
+				continue
+			}
 		}
 		text := g.padCellAt(val, i)
 		switch {
