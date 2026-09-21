@@ -470,6 +470,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.deleteSelectedBookmark()
 		return m, nil
 
+	case dagJumpMsg:
+		return m.handleDagJumpMsg(msg)
+
 	case historyLoadedMsg:
 		m.loadingHistory = false
 		if msg.path != m.historyPath {
@@ -1325,6 +1328,12 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "m":
 			m.toggleBookmarks()
 			return m, nil
+		case "p":
+			return m.jumpDagParent()
+		case "c":
+			return m.jumpDagChild()
+		case "u":
+			return m.jumpDagMergeBase()
 		case "g", "home":
 			return m.gotoMainTop()
 		case "f":
@@ -1336,9 +1345,9 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key == "g" {
 		m.chordG = true
-		m.status = "g · g top · b branch · m bookmarks · r relations"
+		m.status = "g · g top · b branch · m bookmarks · p/c/u dag · r relations"
 		if m.main == MainBlame {
-			m.status = "g · g top · b branch · m bookmarks · r relations · f follow"
+			m.status = "g · g top · b branch · m bookmarks · p/c/u dag · r relations · f follow"
 		}
 		return m, nil
 	}
@@ -1490,6 +1499,12 @@ func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.loadingDetail = true
 		m.detailOffset = 0
 		return m, m.reloadDetailNow()
+	case "p":
+		return m.jumpDagParent()
+	case "c":
+		return m.jumpDagChild()
+	case "u":
+		return m.jumpDagMergeBase()
 	}
 	return m, nil
 }
@@ -1676,6 +1691,12 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			path = m.historyPath
 		}
 		return m, m.startBlame(path, pc.Hash, MainHistory)
+	case "p":
+		return m.jumpDagParent()
+	case "c":
+		return m.jumpDagChild()
+	case "u":
+		return m.jumpDagMergeBase()
 	}
 	return m, nil
 }
@@ -1799,6 +1820,12 @@ func (m Model) handleBlameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.followBlameLine()
 	case "F":
 		return m.openLineEvolution()
+	case "p":
+		return m.jumpDagParent()
+	case "c":
+		return m.jumpDagChild()
+	case "u":
+		return m.jumpDagMergeBase()
 	}
 	return m, nil
 }
@@ -2018,6 +2045,12 @@ func (m Model) handlePickaxeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.activatePickaxeHit()
 	case "b":
 		return m.blamePickaxeHit()
+	case "p":
+		return m.jumpDagParent()
+	case "c":
+		return m.jumpDagChild()
+	case "u":
+		return m.jumpDagMergeBase()
 	}
 	return m, nil
 }

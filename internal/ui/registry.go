@@ -44,6 +44,8 @@ func registry() []Section {
 				{"g m / ctrl+g", []string{"g", "m", "ctrl+g"}, "open bookmarks", "gm"},
 				{"m", []string{"m"}, "bookmark current view", "m"},
 				{"g r", []string{"g", "r"}, "relationship explorer", "gr"},
+				{"p / c / u", []string{"p", "c", "u"}, "DAG parent / child / merge-base", "p/c/u"},
+				{"g p / g c / g u", []string{"g", "p", "c", "u"}, "DAG parent / child / merge-base", ""},
 				{"ctrl+d / ctrl+u", []string{"ctrl+d", "ctrl+u"}, "page down / up", ""},
 				{"enter", []string{"enter"}, "open (commit→files→history; history→blame)", "enter"},
 				{"l", []string{"l"}, "open (blame from non-grid views)", ""},

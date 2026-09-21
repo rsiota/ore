@@ -142,3 +142,31 @@ func (r *Repo) childHashes(ctx context.Context, hash string) ([]string, error) {
 	}
 	return nil, nil
 }
+
+// ChildrenOf returns direct child commit hashes of hash (may be empty).
+func (r *Repo) ChildrenOf(ctx context.Context, hash string) ([]string, error) {
+	return r.childHashes(ctx, hash)
+}
+
+// MergeBase returns the best common ancestor of a and b.
+func (r *Repo) MergeBase(ctx context.Context, a, b string) (string, error) {
+	if a == "" || b == "" {
+		return "", fmt.Errorf("merge-base needs two revisions")
+	}
+	out, err := r.run(ctx, "merge-base", a, b)
+	if err != nil {
+		return "", err
+	}
+	h := strings.TrimSpace(string(out))
+	if h == "" {
+		return "", fmt.Errorf("no merge-base for %s and %s", short(a), short(b))
+	}
+	return h, nil
+}
+
+func short(h string) string {
+	if len(h) > 7 {
+		return h[:7]
+	}
+	return h
+}
