@@ -275,5 +275,8 @@ func (m *Model) handleDetailPatch(msg detailPatchMsg) (tea.Model, tea.Cmd) {
 	m.loadingDetail = false
 	m.detailExpectHash = ""
 	m.invalidateDetailCache()
+	if m.hunkMode {
+		m.rebuildDetailHunks()
+	}
 	return *m, nil
 }

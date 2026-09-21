@@ -19,6 +19,9 @@ func (m *Model) invalidateDetailCache() {
 		return
 	}
 	*m.detailCache = detailRenderCache{}
+	if m.hunkMode {
+		m.hunks = nil // rebuild on next select/jump/toggle paint path
+	}
 }
 
 func (m Model) detailRenderKey(width int) string {

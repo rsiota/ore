@@ -27,7 +27,8 @@ func registry() []Section {
 				{"ctrl+p", []string{"ctrl+p"}, "command palette", "ctrl+p"},
 				{"ctrl+r", []string{"ctrl+r"}, "refresh commit log", ""},
 				{"D", []string{"D"}, "cycle diff view (zen ↔ unified)", "D"},
-				{"[/]", []string{"[", "]"}, "less / more zen diff context", ""},
+				{"H", []string{"H"}, "toggle hunk list strip", "H"},
+				{"[/]", []string{"[", "]"}, "zen context · or hunk prev/next when H on", ""},
 				{"w", []string{"w"}, "toggle diff soft-wrap", "w"},
 				{"q / ctrl+c", []string{"q", "ctrl+c"}, "quit", "q"},
 				{"tab", []string{"tab"}, "focus main ↔ detail", "tab"},
@@ -104,6 +105,18 @@ func registry() []Section {
 				{"j/k", []string{"j", "k"}, "move in evolution stack", "j/k"},
 				{"enter", []string{"enter"}, "open blame at this step", "enter"},
 				{"esc", []string{"esc"}, "back to blame", "esc"},
+			},
+		},
+		{
+			Title: "Hunk list (H)",
+			Items: []Binding{
+				{"H", []string{"H"}, "toggle bottom hunk strip", "H"},
+				{"tab", []string{"tab"}, "focus hunks (when strip open)", "tab"},
+				{"j/k", []string{"j", "k"}, "next / previous hunk", "j/k"},
+				{"[/]", []string{"[", "]"}, "previous / next hunk", "[/]"},
+				{"enter", []string{"enter"}, "jump detail to hunk", "enter"},
+				{"g / G", []string{"g", "G"}, "first / last hunk", ""},
+				{"esc", []string{"esc"}, "return focus to main grid", "esc"},
 			},
 		},
 		{
@@ -216,6 +229,9 @@ func statusHintList(main MainView, explorerOpen bool) []string {
 
 // statusHintListFocus is statusHintList with detail-yank focus awareness.
 func statusHintListFocus(main MainView, explorerOpen bool, focus Focus) []string {
+	if focus == FocusHunks {
+		return hintsForSection("Hunk list (H)")
+	}
 	if focus == FocusDetail || focus == FocusBlameYank {
 		return hintsForSection("Yank browser")
 	}

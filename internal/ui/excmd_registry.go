@@ -135,6 +135,15 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"hunks", "hunk"},
+			desc:  "toggle the bottom hunk list strip",
+			usage: ":hunks",
+			run: func(m *Model, _ []string) tea.Cmd {
+				m.toggleHunkMode()
+				return nil
+			},
+		},
+		{
 			verbs: []string{"session"},
 			desc:  "save, clear, or show the restored workspace session",
 			usage: ":session [save|clear]",

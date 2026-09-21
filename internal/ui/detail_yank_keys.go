@@ -117,6 +117,9 @@ func (m *Model) jumpDetailHunk(dir int) tea.Cmd {
 	m.ensureYankVisible(viewH)
 	ord := hunkOrdinal(hunks, m.yank.row)
 	m.status = fmt.Sprintf("detail · hunk %d/%d", ord, len(hunks))
+	if m.hunkMode {
+		m.syncHunkCursorFromDetailRow(m.yank.row)
+	}
 	return nil
 }
 

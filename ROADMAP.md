@@ -124,8 +124,9 @@ North star: make **line → previous versions → co-changed regions → authors
 5b. [x] **Bookmarks / named views** — `m` save, `g m` / `ctrl+g` / `:bookmarks` fuzzy popup; jump reuses session restore
 6. [x] **Readonly code yank browser** — thin vim-like nav in panes that show code (**detail** + **blame code column**): motions (`hjkl`, `w/b/e`, `0/$`, `gg/G`, optional `f/t` + pane-local `/`), visual char/line (`v`/`V`), `y`/`Y` to clipboard; visible block cursor; clear enter/exit so it doesn’t fight grid keys (`esc` leaves). No insert, no mutating operators, no creel-scale vim engine. On blame, `Tab` enters code yank then detail.
 7. [x] **Soft DAG jumps** — `p` / `c` / `u` (and `g p` / `g c` / `g u`) hop parent / first child / merge-base with tip without opening `g r`
+8. [x] **Hunk-centric mode** — `H` / `:hunks` docks a bottom hunk list; `Tab` focuses it; `j/k`/`[`/`]` jump detail (and yank when focused)
 
-Later (when the above feels sticky): hunk-centric mode, timeline strip, quiet ownership summary in `g r`, export provenance trail, large-repo caching. Keep AI/charts/PR links optional and thin.
+Later (when the above feels sticky): timeline strip, quiet ownership summary in `g r`, export provenance trail, large-repo caching. Keep AI/charts/PR links optional and thin.
 
 ---
 

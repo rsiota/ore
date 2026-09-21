@@ -40,6 +40,9 @@ func matchHint(hints []string, key string) string {
 // hintSectionTitles returns registry section titles to search for a pressed
 // key's description, ordered most-specific first.
 func (m Model) hintSectionTitles() []string {
+	if m.focus == FocusHunks {
+		return []string{"Hunk list (H)", "Global"}
+	}
 	if m.focus == FocusDetail || m.focus == FocusBlameYank {
 		return []string{"Yank browser", "Global"}
 	}

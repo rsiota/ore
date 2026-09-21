@@ -22,6 +22,7 @@ const (
 	FocusMain Focus = iota
 	FocusDetail
 	FocusBlameYank
+	FocusHunks
 	FocusExplorer
 )
 
@@ -160,6 +161,11 @@ type Model struct {
 	loadingRel bool
 
 	yank detailYank // readonly yank browser (FocusDetail / FocusBlameYank)
+
+	hunkMode   bool // bottom hunk strip visible
+	hunks      []detailHunk
+	hunkCursor int
+	hunkOffset int
 
 	// refreshPreferHash, when set, marks commitsLoadedMsg as a refresh rather
 	// than the initial load: restore the commit cursor to this hash and keep
@@ -781,6 +787,29 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleExplorerKeys(msg)
 	}
 
+	if m.focus == FocusHunks {
+		if msg.String() == "ctrl+c" || msg.String() == "q" {
+			return m, m.beginQuit()
+		}
+		if msg.String() == "ctrl+p" {
+			m.focus = FocusMain
+			m.branches.Hide()
+			m.bookmarks.Hide()
+			m.palette.Open()
+			m.status = "command palette"
+			return m, nil
+		}
+		if msg.String() == "ctrl+g" {
+			m.toggleBookmarks()
+			return m, nil
+		}
+		if msg.String() == "m" {
+			m.addBookmark("")
+			return m, nil
+		}
+		return m.handleHunkKeys(msg)
+	}
+
 	if m.focus == FocusDetail || m.focus == FocusBlameYank {
 		// Yank browsers own keys (incl. w/esc/h) so they don't fight grid globals.
 		if msg.String() == "ctrl+c" || msg.String() == "q" {
@@ -841,6 +870,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "[":
+		if m.hunkMode {
+			m.chordG = false
+			return m, m.jumpHunkList(-1)
+		}
 		if m.diffMode != DiffZen {
 			break
 		}
@@ -855,6 +888,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("diff context %d", m.zenContext)
 		return m, m.reloadDetail()
 	case "]":
+		if m.hunkMode {
+			m.chordG = false
+			return m, m.jumpHunkList(1)
+		}
 		if m.diffMode != DiffZen {
 			break
 		}
@@ -868,6 +905,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailOffset = 0
 		m.status = fmt.Sprintf("diff context %d", m.zenContext)
 		return m, m.reloadDetail()
+	case "H":
+		m.chordG = false
+		m.toggleHunkMode()
+		return m, nil
 	case "ctrl+r":
 		m.chordG = false
 		return m, m.refresh()
@@ -933,6 +974,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDetailKeys(msg)
 	case FocusBlameYank:
 		return m.handleBlameYankKeys(msg)
+	case FocusHunks:
+		return m.handleHunkKeys(msg)
 	}
 	return m, nil
 }
@@ -951,6 +994,23 @@ func (m Model) cycleFocus() (tea.Model, tea.Cmd) {
 	}
 	switch m.focus {
 	case FocusMain:
+		if m.hunkMode {
+			m.rebuildDetailHunks()
+			m.focus = FocusHunks
+			if len(m.hunks) == 0 {
+				m.status = "hunks · none in this detail"
+			} else {
+				m.status = fmtHunkStatus(m.hunkCursor, len(m.hunks), m.hunks[m.hunkCursor]) + " · tab detail · esc main"
+			}
+			return m, nil
+		}
+		if m.main == MainBlame {
+			m.enterBlameYank()
+		} else {
+			m.enterDetailYank()
+		}
+	case FocusHunks:
+		m.focus = FocusMain
 		if m.main == MainBlame {
 			m.enterBlameYank()
 		} else {
@@ -2367,9 +2427,18 @@ func (m Model) bodyHeight() int {
 	return max(1, m.height-1)
 }
 
+// panesHeight is the vertical space for main+detail (excludes hunk strip).
+func (m Model) panesHeight() int {
+	h := m.bodyHeight()
+	if m.hunkMode {
+		h -= hunkStripOuterHeight()
+	}
+	return max(1, h)
+}
+
 // paneContentHeight is the inner height available inside a bordered pane.
 func (m Model) paneContentHeight() int {
-	return max(1, m.bodyHeight()-borderOverhead)
+	return max(1, m.panesHeight()-borderOverhead)
 }
 
 func (m Model) mainPaneWidth() int {
@@ -2588,6 +2657,10 @@ func (m Model) renderStatus() string {
 		rightFocused = m.focus == FocusExplorer
 	}
 	rightTab := renderStatusTab(rightTitle, rightFocused)
+	hunkTab := ""
+	if m.hunkMode {
+		hunkTab = "  " + renderStatusTab("hunks", m.focus == FocusHunks)
+	}
 
 	repo := filepathBase(m.repo.Path)
 	midParts := []string{styleTitle.Render(repo)}
@@ -2626,7 +2699,7 @@ func (m Model) renderStatus() string {
 	}
 
 	mid := strings.Join(midParts, styleMuted.Render(" · "))
-	left := leftTab
+	left := leftTab + hunkTab
 	if mid != "" {
 		left += " " + mid
 	}
@@ -2677,32 +2750,43 @@ func (m Model) renderStatus() string {
 }
 
 func (m Model) renderBody() string {
-	h := m.bodyHeight()
+	h := m.panesHeight()
 	if m.loading && len(m.commits) == 0 {
 		return fitWidth(styleMuted.Render(" loading commit history…"), m.width)
 	}
 	innerH := m.paneContentHeight()
+	var panes string
 	if m.width < 80 {
 		innerW := max(1, m.width-borderOverhead)
 		if m.explorer.Opened() {
 			m.explorer.SetSize(innerW, innerH)
-			return m.framePane(m.explorer.View(m.focus == FocusExplorer), m.width, h, FocusExplorer)
+			panes = m.framePane(m.explorer.View(m.focus == FocusExplorer), m.width, h, FocusExplorer)
+		} else {
+			panes = m.framePane(m.renderMainPane(innerW, innerH), m.width, h, FocusMain)
 		}
-		return m.framePane(m.renderMainPane(innerW, innerH), m.width, h, FocusMain)
-	}
-	cw := m.mainPaneWidth()
-	dw := m.width - cw
-	leftInner := max(1, cw-borderOverhead)
-	rightInner := max(1, dw-borderOverhead)
-	left := m.framePane(m.renderMainPane(leftInner, innerH), cw, h, FocusMain)
-	var right string
-	if m.explorer.Opened() {
-		m.explorer.SetSize(rightInner, innerH)
-		right = m.framePane(m.explorer.View(m.focus == FocusExplorer), dw, h, FocusExplorer)
 	} else {
-		right = m.framePane(m.renderDetailPane(rightInner, innerH), dw, h, FocusDetail)
+		cw := m.mainPaneWidth()
+		dw := m.width - cw
+		leftInner := max(1, cw-borderOverhead)
+		rightInner := max(1, dw-borderOverhead)
+		left := m.framePane(m.renderMainPane(leftInner, innerH), cw, h, FocusMain)
+		var right string
+		if m.explorer.Opened() {
+			m.explorer.SetSize(rightInner, innerH)
+			right = m.framePane(m.explorer.View(m.focus == FocusExplorer), dw, h, FocusExplorer)
+		} else {
+			right = m.framePane(m.renderDetailPane(rightInner, innerH), dw, h, FocusDetail)
+		}
+		panes = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	if m.hunkMode {
+		if m.hunks == nil {
+			m.rebuildDetailHunks()
+		}
+		strip := m.renderHunkStrip(m.width, hunkStripOuterHeight())
+		return lipgloss.JoinVertical(lipgloss.Left, panes, strip)
+	}
+	return panes
 }
 
 func (m Model) renderMainPane(width, height int) string {
