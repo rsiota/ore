@@ -8,14 +8,15 @@ import (
 
 // CommitRelations is the graph neighbourhood of one commit.
 type CommitRelations struct {
-	Hash     string
-	Subject  string
-	Author   string
-	Email    string
-	Parents  []Commit
-	Children []Commit
-	Files    []FileChange
-	HotSpots []CoChange // paths that often change with this commit's files
+	Hash       string
+	Subject    string
+	Author     string
+	Email      string
+	Parents    []Commit
+	Children   []Commit
+	Files      []FileChange
+	HotSpots   []CoChange    // paths that often change with this commit's files
+	Ownership  []AuthorShare // quiet author mix for the commit's paths
 }
 
 // LineRelations is archaeology context for one blamed line.
@@ -27,6 +28,7 @@ type LineRelations struct {
 	Previous     *Commit      // previous blame commit when known
 	PreviousPath string       // porcelain previous path when it differs / is set
 	HotSpots     []CoChange
+	Ownership    []AuthorShare // quiet author mix from path history
 }
 
 // Relations returns parents, children, and files for hash.
@@ -72,6 +74,9 @@ func (r *Repo) Relations(ctx context.Context, hash string) (CommitRelations, err
 	if hot, err := r.CoChangedFiles(ctx, seeds, out.Hash); err == nil {
 		out.HotSpots = hot
 	}
+	if own, err := r.PathOwnership(ctx, out.Hash, seeds, ownershipSample, ownershipTop); err == nil {
+		out.Ownership = own
+	}
 	return out, nil
 }
 
@@ -96,6 +101,16 @@ func (r *Repo) LineRelationsAt(ctx context.Context, path, rev string, line Blame
 	if hot, err := r.CoChangedFiles(ctx, seeds, ""); err == nil {
 		out.HotSpots = hot
 	}
+	names := make([]string, 0, len(hist)+1)
+	if line.Author != "" {
+		names = append(names, line.Author)
+	}
+	for _, c := range hist {
+		if c.Author != "" {
+			names = append(names, c.Author)
+		}
+	}
+	out.Ownership = SummarizeAuthors(names, ownershipTop)
 	return out, nil
 }
 

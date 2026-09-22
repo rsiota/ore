@@ -15,6 +15,7 @@ const (
 	relCommit
 	relFile
 	relHotSpot // co-changed path; count shown as a leading column
+	relOwn     // quiet ownership share row (author · count · %)
 	relAuthor
 	relMeta
 )
@@ -28,6 +29,7 @@ type relNode struct {
 	label      string
 	hash       string
 	path       string
+	author     string   // ownership row author name (hue)
 	count      int      // co-change hits; leading column when kind == relHotSpot
 	coupleWith []string // seed paths to intersect with path (Often-with drill)
 	selectable bool
@@ -161,6 +163,7 @@ func buildLineRoot(rel git.LineRelations, e *RelExplorer) []*relNode {
 		seeds = append(seeds, rel.PreviousPath)
 	}
 	roots = append(roots, hotSpotNodes(rel.HotSpots, 0, nil, rel.Rev, seeds)...)
+	roots = append(roots, ownershipNodes(rel.Ownership, 0, nil)...)
 	return roots
 }
 
@@ -197,6 +200,7 @@ func commitRelationBlocks(rel git.CommitRelations, depth int, parent *relNode, e
 		})
 	}
 	out = append(out, hotSpotNodes(rel.HotSpots, depth, parent, rel.Hash, seedPathsFromFiles(rel.Files))...)
+	out = append(out, ownershipNodes(rel.Ownership, depth, parent)...)
 	return out
 }
 
@@ -227,6 +231,25 @@ func hotSpotNodes(hot []git.CoChange, depth int, parent *relNode, rev string, se
 			kind: relHotSpot, depth: depth + 1, parent: parent, selectable: true,
 			path: h.Path, hash: rev, count: h.Count, label: h.Path,
 			coupleWith: seeds,
+		})
+	}
+	return out
+}
+
+// ownershipNodes builds a quiet top-authors rollup (not selectable).
+func ownershipNodes(own []git.AuthorShare, depth int, parent *relNode) []*relNode {
+	if len(own) == 0 {
+		return nil
+	}
+	out := []*relNode{{
+		kind: relSection, depth: depth, parent: parent,
+		label: "Ownership",
+	}}
+	for _, a := range own {
+		out = append(out, &relNode{
+			kind: relOwn, depth: depth + 1, parent: parent,
+			author: a.Name,
+			label:  fmt.Sprintf("%s · %d · %d%%", a.Name, a.Count, a.Pct),
 		})
 	}
 	return out
@@ -575,6 +598,8 @@ func (e RelExplorer) View(focused bool) string {
 		case n.kind == relCommit:
 			// Commits are the primary spine — full cell fg.
 			lines = append(lines, fitWidth(styleCell.Render(text), e.width))
+		case n.kind == relOwn:
+			lines = append(lines, fitWidth(renderOwnRow(n), e.width))
 		case n.kind == relFile, n.kind == relHotSpot:
 			// Paths are secondary; muted keeps the tree scannable.
 			lines = append(lines, fitWidth(styleMuted.Render(text), e.width))
@@ -603,6 +628,20 @@ func renderRelNode(n *relNode) string {
 		return indent + glyph + fmt.Sprintf("%3d  %s", n.count, n.label)
 	}
 	return indent + glyph + n.label
+}
+
+// renderOwnRow paints the author hue on the name; rest stays muted.
+func renderOwnRow(n *relNode) string {
+	indent := strings.Repeat("  ", n.depth)
+	name := n.author
+	if name == "" {
+		return styleMuted.Render(indent + "  " + n.label)
+	}
+	rest := n.label
+	if strings.HasPrefix(rest, name) {
+		rest = rest[len(name):]
+	}
+	return indent + "  " + authorNameStyle(name).Render(name) + styleMuted.Render(rest)
 }
 
 func truncateRunes(s string, max int) string {

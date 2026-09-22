@@ -135,6 +135,44 @@ func TestRelExplorerActivateFileRow(t *testing.T) {
 	}
 }
 
+func TestRelExplorerOwnership(t *testing.T) {
+	var e RelExplorer
+	e.SetSize(48, 20)
+	e.LoadCommit(git.CommitRelations{
+		Hash:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Subject: "root",
+		Author:  "a",
+		Email:   "a@b",
+		Files:   []git.FileChange{{Path: "a.go"}},
+		Ownership: []git.AuthorShare{
+			{Name: "alice", Count: 12, Pct: 60},
+			{Name: "bob", Count: 8, Pct: 40},
+		},
+	})
+	foundSec, foundOwn := false, false
+	for _, n := range e.visibleNodes() {
+		if n.kind == relSection && n.label == "Ownership" {
+			foundSec = true
+		}
+		if n.kind == relOwn && n.author == "alice" {
+			foundOwn = true
+			if n.selectable {
+				t.Fatal("ownership rows should not be selectable")
+			}
+			if !strings.Contains(n.label, "60%") {
+				t.Fatalf("label = %q", n.label)
+			}
+		}
+	}
+	if !foundSec || !foundOwn {
+		t.Fatalf("sec=%v own=%v", foundSec, foundOwn)
+	}
+	view := e.View(true)
+	if !strings.Contains(view, "alice") || !strings.Contains(view, "60%") {
+		t.Fatalf("view missing ownership:\n%s", view)
+	}
+}
+
 func TestRelExplorerHotSpots(t *testing.T) {
 	var e RelExplorer
 	e.LoadCommit(git.CommitRelations{
