@@ -43,6 +43,14 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"authors", "author"},
+			desc:  "list commits by an author (Ownership drill)",
+			usage: ":authors <name> [-- path…]",
+			run: func(m *Model, args []string) tea.Cmd {
+				return m.exAuthors(args)
+			},
+		},
+		{
 			verbs: []string{"nohl", "nohls", "hlclear", "clearhl"},
 			desc:  "turn off pickaxe match highlighting (keeps results)",
 			usage: ":nohl",

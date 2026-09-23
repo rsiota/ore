@@ -31,7 +31,7 @@ type relNode struct {
 	path       string
 	author     string   // ownership row author name (hue)
 	count      int      // co-change hits; leading column when kind == relHotSpot
-	coupleWith []string // seed paths to intersect with path (Often-with drill)
+	coupleWith []string // seed paths for Often-with or Ownership drill
 	selectable bool
 	expandable bool
 	expanded   bool
@@ -163,7 +163,7 @@ func buildLineRoot(rel git.LineRelations, e *RelExplorer) []*relNode {
 		seeds = append(seeds, rel.PreviousPath)
 	}
 	roots = append(roots, hotSpotNodes(rel.HotSpots, 0, nil, rel.Rev, seeds)...)
-	roots = append(roots, ownershipNodes(rel.Ownership, 0, nil)...)
+	roots = append(roots, ownershipNodes(rel.Ownership, 0, nil, rel.Rev, seeds)...)
 	return roots
 }
 
@@ -200,7 +200,7 @@ func commitRelationBlocks(rel git.CommitRelations, depth int, parent *relNode, e
 		})
 	}
 	out = append(out, hotSpotNodes(rel.HotSpots, depth, parent, rel.Hash, seedPathsFromFiles(rel.Files))...)
-	out = append(out, ownershipNodes(rel.Ownership, depth, parent)...)
+	out = append(out, ownershipNodes(rel.Ownership, depth, parent, rel.Hash, seedPathsFromFiles(rel.Files))...)
 	return out
 }
 
@@ -236,20 +236,21 @@ func hotSpotNodes(hot []git.CoChange, depth int, parent *relNode, rev string, se
 	return out
 }
 
-// ownershipNodes builds a quiet top-authors rollup (not selectable).
-func ownershipNodes(own []git.AuthorShare, depth int, parent *relNode) []*relNode {
+// ownershipNodes builds a quiet top-authors rollup; Enter drills that author.
+func ownershipNodes(own []git.AuthorShare, depth int, parent *relNode, rev string, seeds []string) []*relNode {
 	if len(own) == 0 {
 		return nil
 	}
+	seeds = append([]string(nil), seeds...)
 	out := []*relNode{{
 		kind: relSection, depth: depth, parent: parent,
 		label: "Ownership",
 	}}
 	for _, a := range own {
 		out = append(out, &relNode{
-			kind: relOwn, depth: depth + 1, parent: parent,
-			author: a.Name,
-			label:  fmt.Sprintf("%s · %d · %d%%", a.Name, a.Count, a.Pct),
+			kind: relOwn, depth: depth + 1, parent: parent, selectable: true,
+			author: a.Name, hash: rev, coupleWith: seeds,
+			label: fmt.Sprintf("%s · %d · %d%%", a.Name, a.Count, a.Pct),
 		})
 	}
 	return out
@@ -394,7 +395,7 @@ func (e *RelExplorer) ExpandOrDive() (activate bool, cmd tea.Cmd) {
 	if n == nil {
 		return false, nil
 	}
-	if n.kind == relFile || n.kind == relHotSpot {
+	if n.kind == relFile || n.kind == relHotSpot || n.kind == relOwn {
 		return true, nil
 	}
 	if n.kind != relCommit || !n.expandable {

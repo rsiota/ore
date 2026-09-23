@@ -113,7 +113,18 @@ type hitListKind int
 const (
 	hitListPickaxe hitListKind = iota
 	hitListCouple
+	hitListAuthors
 )
+
+func formatAuthorLabel(author string, paths []string) string {
+	if len(paths) == 0 {
+		return author
+	}
+	if len(paths) == 1 {
+		return author + " · " + paths[0]
+	}
+	return fmt.Sprintf("%s · %s +%d", author, paths[0], len(paths)-1)
+}
 
 func formatCoupleLabel(seeds []string, partner string) string {
 	seed := ""
@@ -133,6 +144,9 @@ func (m Model) hitListShortStatus() string {
 	n := len(m.pickaxe)
 	if m.pickKind == hitListCouple {
 		return fmt.Sprintf("couple · %s · %d commits", label, n)
+	}
+	if m.pickKind == hitListAuthors {
+		return fmt.Sprintf("authors · %s · %d commits", label, n)
 	}
 	s := fmt.Sprintf("pickaxe · %s %q · %d hits", pickaxeModeLabel(m.pickMode), label, n)
 	if m.pickHlOn {

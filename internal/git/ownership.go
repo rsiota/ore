@@ -3,7 +3,9 @@ package git
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -15,8 +17,9 @@ type AuthorShare struct {
 }
 
 const (
-	ownershipSample = 200
-	ownershipTop    = 5
+	ownershipSample    = 200
+	ownershipTop       = 5
+	ownershipCommitCap = 100
 )
 
 // SummarizeAuthors counts names and returns the top shares (quiet rollup).
@@ -108,4 +111,57 @@ func (r *Repo) PathOwnership(ctx context.Context, rev string, paths []string, sa
 		}
 	}
 	return SummarizeAuthors(names, top), nil
+}
+
+// PathAuthorCommits lists newest-first commits by author that touched paths
+// (or the whole tree when paths is empty). Used to drill from an Ownership row.
+func (r *Repo) PathAuthorCommits(ctx context.Context, author, rev string, paths []string, maxCount int) ([]PickaxeHit, error) {
+	author = strings.TrimSpace(author)
+	if author == "" {
+		return nil, fmt.Errorf("author required")
+	}
+	paths = uniquePaths(paths)
+	if len(paths) > coChangeMaxSeeds {
+		paths = paths[:coChangeMaxSeeds]
+	}
+	if rev == "" {
+		rev = "HEAD"
+	}
+	if maxCount <= 0 {
+		maxCount = ownershipCommitCap
+	}
+
+	format := recSep + strings.Join([]string{
+		"%H", "%h", "%an", "%ae", "%aI", "%s", "%P",
+	}, fieldSep)
+
+	args := []string{
+		"log", rev,
+		"--author=" + regexp.QuoteMeta(author),
+		"--name-only",
+		"--date=iso-strict",
+		"--pretty=format:" + format,
+		"-n", strconv.Itoa(maxCount),
+	}
+	if len(paths) > 0 {
+		args = append(args, "--")
+		args = append(args, paths...)
+	}
+
+	out, err := r.run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	hits, err := parsePickaxeLog(out)
+	if err != nil {
+		return nil, err
+	}
+	// --author is a regex against the ident; keep %aN matches from the rollup.
+	exact := hits[:0]
+	for _, h := range hits {
+		if strings.EqualFold(h.Commit.Author, author) {
+			exact = append(exact, h)
+		}
+	}
+	return exact, nil
 }

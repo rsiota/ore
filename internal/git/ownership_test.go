@@ -80,4 +80,25 @@ func TestPathOwnership(t *testing.T) {
 	if own[1].Name != "bob" || own[1].Count != 1 {
 		t.Fatalf("ownership=%#v", own)
 	}
+
+	alice, err := repo.PathAuthorCommits(ctx, "alice", "HEAD", []string{"a.go"}, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(alice) != 2 {
+		t.Fatalf("alice hits = %#v", alice)
+	}
+	for _, h := range alice {
+		if h.Commit.Author != "alice" {
+			t.Fatalf("want alice, got %#v", h)
+		}
+	}
+
+	bob, err := repo.PathAuthorCommits(ctx, "bob", "HEAD", []string{"a.go"}, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bob) != 1 || bob[0].Commit.Author != "bob" {
+		t.Fatalf("bob hits = %#v", bob)
+	}
 }

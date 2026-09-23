@@ -156,11 +156,17 @@ func TestRelExplorerOwnership(t *testing.T) {
 		}
 		if n.kind == relOwn && n.author == "alice" {
 			foundOwn = true
-			if n.selectable {
-				t.Fatal("ownership rows should not be selectable")
+			if !n.selectable {
+				t.Fatal("ownership rows should be selectable")
 			}
 			if !strings.Contains(n.label, "60%") {
 				t.Fatalf("label = %q", n.label)
+			}
+			if n.hash != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+				t.Fatalf("hash = %q", n.hash)
+			}
+			if len(n.coupleWith) != 1 || n.coupleWith[0] != "a.go" {
+				t.Fatalf("paths = %#v", n.coupleWith)
 			}
 		}
 	}

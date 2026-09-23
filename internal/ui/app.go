@@ -111,8 +111,11 @@ type Model struct {
 	pickaxeFrom  MainView // view to restore on esc
 	pickaxeDive  bool     // drilled from pickaxe into history/files/blame
 	pickHlOn     bool     // wash matching spans in detail/blame
-	coupleSeeds  []string // seeds for an Often-with couple drill
+	coupleSeeds   []string // seeds for an Often-with couple drill
 	couplePartner string
+	authorFilter  string   // author name for an Ownership / :authors drill
+	authorPaths   []string
+	authorRev     string
 
 	detail           *git.CommitDetail
 	detailFilterPath string // path requested by the in-flight / latest reloadDetail
@@ -274,6 +277,15 @@ type coupleLoadedMsg struct {
 	err     error
 }
 
+type authorLoadedMsg struct {
+	author string
+	paths  []string
+	rev    string
+	label  string
+	hits   []git.PickaxeHit
+	err    error
+}
+
 type relationsLoadedMsg struct {
 	commit *git.CommitRelations
 	line   *git.LineRelations
@@ -365,6 +377,22 @@ func loadCoupleCmd(repo *git.Repo, seeds []string, partner string) tea.Cmd {
 			label:   formatCoupleLabel(seeds, partner),
 			hits:    hits,
 			err:     err,
+		}
+	}
+}
+
+func loadAuthorCmd(repo *git.Repo, author, rev string, paths []string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		hits, err := repo.PathAuthorCommits(ctx, author, rev, paths, 0)
+		return authorLoadedMsg{
+			author: author,
+			paths:  paths,
+			rev:    rev,
+			label:  formatAuthorLabel(author, paths),
+			hits:   hits,
+			err:    err,
 		}
 	}
 }
@@ -637,6 +665,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focus = FocusMain
 		m.chordG = false
 		m.status = fmt.Sprintf("couple · %s · %d commits · enter · b blame · esc back",
+			truncateQuery(msg.label, 40), len(m.pickaxe))
+		if len(m.pickaxe) > 0 {
+			return m, m.reloadDetail()
+		}
+		m.detail = nil
+		m.detailPath = ""
+		return m, nil
+
+	case authorLoadedMsg:
+		m.loadingPick = false
+		if m.pickKind != hitListAuthors || msg.author != m.authorFilter {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.status = "error"
+			return m, nil
+		}
+		m.pickaxe = msg.hits
+		m.pickQuery = msg.label
+		m.authorFilter = msg.author
+		m.authorPaths = msg.paths
+		m.authorRev = msg.rev
+		m.pickPath = ""
+		if len(msg.paths) == 1 {
+			m.pickPath = msg.paths[0]
+		}
+		m.pickCursor = 0
+		m.pickOffset = 0
+		m.pickCol = pickColSubject
+		m.pickHlOn = false
+		m.main = MainPickaxe
+		m.focus = FocusMain
+		m.chordG = false
+		m.status = fmt.Sprintf("authors · %s · %d commits · enter · b blame · esc back",
 			truncateQuery(msg.label, 40), len(m.pickaxe))
 		if len(m.pickaxe) > 0 {
 			return m, m.reloadDetail()
@@ -1099,6 +1162,10 @@ func (m Model) activateRelation() (tea.Model, tea.Cmd) {
 		m.explorer.Close()
 		m.focus = FocusMain
 		return m.startCouple(row.coupleWith, row.path)
+	case relOwn:
+		m.explorer.Close()
+		m.focus = FocusMain
+		return m.startAuthors(row.author, row.coupleWith, row.hash)
 	default:
 		return m, nil
 	}
@@ -1295,6 +1362,9 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		m.pickKind = hitListPickaxe
 		m.coupleSeeds = nil
 		m.couplePartner = ""
+		m.authorFilter = ""
+		m.authorPaths = nil
+		m.authorRev = ""
 		m.pickaxeDive = false
 		m.pickHlOn = false
 		m.invalidateDetailCache()
@@ -2047,6 +2117,40 @@ func (m Model) startCouple(seeds []string, partner string) (tea.Model, tea.Cmd) 
 	m.invalidateDetailCache()
 	m.status = fmt.Sprintf("couple · searching %s…", truncateQuery(m.pickQuery, 40))
 	return m, loadCoupleCmd(m.repo, seeds, partner)
+}
+
+func (m Model) startAuthors(author string, paths []string, rev string) (tea.Model, tea.Cmd) {
+	author = strings.TrimSpace(author)
+	paths = append([]string(nil), paths...)
+	if author == "" {
+		m.status = "authors needs a name"
+		return m, nil
+	}
+	from := m.main
+	if from == MainPickaxe {
+		from = m.pickaxeFrom
+	}
+	if from == MainPickaxe {
+		from = MainCommits
+	}
+	m.pickaxeFrom = from
+	m.pickKind = hitListAuthors
+	m.authorFilter = author
+	m.authorPaths = paths
+	m.authorRev = rev
+	m.pickQuery = formatAuthorLabel(author, paths)
+	m.pickPath = ""
+	if len(paths) == 1 {
+		m.pickPath = paths[0]
+	}
+	m.pickHlOn = false
+	m.loadingPick = true
+	m.err = ""
+	m.chordG = false
+	m.focus = FocusMain
+	m.invalidateDetailCache()
+	m.status = fmt.Sprintf("authors · searching %s…", truncateQuery(m.pickQuery, 40))
+	return m, loadAuthorCmd(m.repo, author, rev, paths)
 }
 
 func (m Model) handlePickaxeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -2819,6 +2923,9 @@ func (m Model) mainTitle() string {
 	case MainPickaxe:
 		if m.pickKind == hitListCouple {
 			return "couple"
+		}
+		if m.pickKind == hitListAuthors {
+			return "authors"
 		}
 		return "pickaxe"
 	default:

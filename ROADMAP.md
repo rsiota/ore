@@ -126,6 +126,7 @@ North star: make **line → previous versions → co-changed regions → authors
 7. [x] **Soft DAG jumps** — `p` / `c` / `u` (and `g p` / `g c` / `g u`) hop parent / first child / merge-base with tip without opening `g r`
 8. [x] **Hunk-centric mode** — `H` / `:hunks` docks a bottom hunk list; `Tab` focuses it; `j/k`/`[`/`]` jump detail (and yank when focused)
 9. [x] **Quiet ownership summary** — top authors with % in `g r` (path history / recent log sample); muted rows, author-hued names
+10. [x] **Ownership → author commits** — `Enter` on an Ownership row (or `:authors`) lists that author's commits on those paths
 
 Later (when the above feels sticky): timeline strip, export provenance trail, large-repo caching. Keep AI/charts/PR links optional and thin.
 

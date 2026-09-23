@@ -153,6 +153,57 @@ func (m *Model) exCouple(args []string) tea.Cmd {
 	return cmd
 }
 
+func (m *Model) exAuthors(args []string) tea.Cmd {
+	query := strings.Join(args, " ")
+	var paths []string
+	if i := strings.Index(query, " -- "); i >= 0 {
+		paths = strings.Fields(strings.TrimSpace(query[i+4:]))
+		query = strings.TrimSpace(query[:i])
+	}
+	name := strings.TrimSpace(query)
+	if name == "" {
+		m.status = ":authors needs a name — :authors <name> [-- path…]"
+		return nil
+	}
+	if len(paths) == 0 {
+		paths = m.contextAuthorPaths()
+	}
+	rev := m.viewRev
+	if rev == "" {
+		if hash := m.selectedHash(); hash != "" {
+			rev = hash
+		}
+	}
+	nm, cmd := m.startAuthors(name, paths, rev)
+	*m = nm.(Model)
+	return cmd
+}
+
+func (m Model) contextAuthorPaths() []string {
+	switch m.main {
+	case MainHistory:
+		if m.historyPath != "" {
+			return []string{m.historyPath}
+		}
+	case MainBlame:
+		if m.blamePath != "" {
+			return []string{m.blamePath}
+		}
+	case MainLineEvo:
+		if m.evoOriginPath != "" {
+			return []string{m.evoOriginPath}
+		}
+	case MainPickaxe:
+		if m.pickKind == hitListAuthors && len(m.authorPaths) > 0 {
+			return append([]string(nil), m.authorPaths...)
+		}
+		if m.pickPath != "" {
+			return []string{m.pickPath}
+		}
+	}
+	return nil
+}
+
 func (m *Model) exTheme(args []string) tea.Cmd {
 	if len(args) == 0 {
 		m.status = fmt.Sprintf("theme %s — :theme light|dark", m.theme)
