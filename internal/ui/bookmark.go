@@ -130,7 +130,7 @@ func (m *Model) jumpBookmark(st session.State) tea.Cmd {
 		m.openFilesPending = false
 		m.history = nil
 		m.historyPath = ""
-		return loadCommitsCmd(m.repo, m.viewRev)
+		return loadCommitsCmd(m.repo, m.viewRev, m.logLimit)
 	}
 	return m.continueSessionRestore()
 }

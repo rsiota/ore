@@ -49,7 +49,8 @@ type PickaxeHit struct {
 	Paths  []string
 }
 
-const defaultPickaxeLimit = 100
+// DefaultPickaxeLimit is the result cap when PickaxeOptions.MaxCount is 0.
+const DefaultPickaxeLimit = 100
 
 // Pickaxe runs git log -S/-G and returns matching commits newest-first.
 func (r *Repo) Pickaxe(ctx context.Context, opt PickaxeOptions) ([]PickaxeHit, error) {
@@ -59,7 +60,7 @@ func (r *Repo) Pickaxe(ctx context.Context, opt PickaxeOptions) ([]PickaxeHit, e
 	}
 	limit := opt.MaxCount
 	if limit <= 0 {
-		limit = defaultPickaxeLimit
+		limit = DefaultPickaxeLimit
 	}
 	rev := opt.Rev
 	if rev == "" {

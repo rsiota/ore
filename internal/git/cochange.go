@@ -17,10 +17,10 @@ type CoChange struct {
 }
 
 const (
-	coChangeSample   = 80 // max commits to sample
-	coChangeTop      = 12 // max hot spots returned
-	coChangeMaxSeeds = 20 // cap seeds when a commit touches many files
-	coChangeCommitCap = 80 // max intersecting commits returned
+	CoChangeSample    = 80 // max commits to sample
+	CoChangeTop       = 12 // max hot spots returned
+	coChangeMaxSeeds  = 20 // cap seeds when a commit touches many files
+	CoChangeCommitCap = 80 // max intersecting commits returned
 )
 
 // CoChangeCommits returns commits where partner co-occurs with at least one
@@ -47,7 +47,7 @@ func (r *Repo) CoChangeCommits(ctx context.Context, seeds []string, partner stri
 		seeds = seeds[:coChangeMaxSeeds]
 	}
 	if maxCount <= 0 {
-		maxCount = coChangeCommitCap
+		maxCount = CoChangeCommitCap
 	}
 
 	seedSet := make(map[string]struct{}, len(seeds))
@@ -167,7 +167,7 @@ func (r *Repo) CoChangedFiles(ctx context.Context, seeds []string, excludeHash s
 
 	// Path-limited log only lists the matching paths; gather commit hashes
 	// first, then re-show each commit's full name-only file list.
-	listArgs := []string{"rev-list", "--all", "-n", strconv.Itoa(coChangeSample), "--"}
+	listArgs := []string{"rev-list", "--all", "-n", strconv.Itoa(CoChangeSample), "--"}
 	listArgs = append(listArgs, seeds...)
 	listOut, err := r.run(ctx, listArgs...)
 	if err != nil {
@@ -247,8 +247,8 @@ func (r *Repo) CoChangedFiles(ctx context.Context, seeds []string, excludeHash s
 		}
 		return outList[i].Path < outList[j].Path
 	})
-	if len(outList) > coChangeTop {
-		outList = outList[:coChangeTop]
+	if len(outList) > CoChangeTop {
+		outList = outList[:CoChangeTop]
 	}
 	return outList, nil
 }

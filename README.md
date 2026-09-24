@@ -12,7 +12,7 @@ go run ./cmd/ore /path/to/repo
 go run ./cmd/ore -C /path/to/repo
 ```
 
-**Keys:** `ctrl+p` palette · `m` bookmark · `g m` / `ctrl+g` bookmarks · `H` hunks · `p`/`c`/`u` DAG hops · `D` zen/unified diff · `w` wrap · `[`/`]` zen context · `:` commands · `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `F` evolve · `esc` back · `q` quit
+**Keys:** `ctrl+p` palette · `m` bookmark · `g m` / `ctrl+g` bookmarks · `H` hunks · `p`/`c`/`u` DAG hops · `+` / `:more` older commits · `D` zen/unified diff · `w` wrap · `[`/`]` zen context · `:` commands · `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `F` evolve · `esc` back · `q` quit
 
 **Commit grid:** soft graph · `h`/`l` columns · `o` cycle sort · `/` filters the active column
 
@@ -34,6 +34,7 @@ Commit grid is columnar (sort + column-scoped `/`). Ex commands (`:blame`, `:his
 | `:history <path>` | Path history with rename follow + “was / moved from” edges |
 | `:goto <hash>` | Jump to commit (prefix match) |
 | `:hunks` | Toggle the bottom hunk list strip |
+| `:more [count]` | Load older commits (extends the 500-commit window) |
 | `:bookmark [name]` | Bookmark the current view |
 | `:bookmarks [clear]` | Toggle bookmarks panel (or clear all) |
 | `:theme [light|dark]` | Switch colour theme (persisted) |

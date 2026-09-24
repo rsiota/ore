@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,6 +26,9 @@ var ErrNotRepository = errors.New("not a git repository")
 type Repo struct {
 	Path string // absolute path to the work tree root
 	Git  string // git binary; empty means "git" on PATH
+
+	graphMu     sync.Mutex
+	childByHash map[string][]string // full hash → direct children (session cache)
 }
 
 // Open finds the work tree containing path (or path itself) and returns a Repo.
@@ -95,7 +99,8 @@ type LogOptions struct {
 	Follow   bool   // git log --follow (requires Path)
 }
 
-const defaultLogLimit = 500
+// DefaultLogLimit is the silent window for CommitLog / FileHistory when MaxCount is 0.
+const DefaultLogLimit = 500
 
 // field sep + record sep chosen to avoid colliding with commit message text.
 const (
@@ -107,7 +112,7 @@ const (
 func (r *Repo) CommitLog(ctx context.Context, opt LogOptions) ([]Commit, error) {
 	limit := opt.MaxCount
 	if limit <= 0 {
-		limit = defaultLogLimit
+		limit = DefaultLogLimit
 	}
 	rev := opt.Rev
 	if rev == "" {
@@ -164,11 +169,11 @@ func parseCommitLog(out []byte) ([]Commit, error) {
 
 // CommitDetail is a commit plus its message body and unified diff.
 type CommitDetail struct {
-	Commit  Commit
-	Body    string // message without subject line
-	Diff    string
-	Stat    string
-	Files   []FileChange
+	Commit Commit
+	Body   string // message without subject line
+	Diff   string
+	Stat   string
+	Files  []FileChange
 }
 
 // FileChange is one path touched by a commit.
@@ -368,6 +373,27 @@ func parseNumstat(out []byte) (files []FileChange, additions, deletions int) {
 	return files, additions, deletions
 }
 
+// RevCount returns the number of commits reachable from rev (optionally
+// limited to path, without --follow). rev empty means HEAD.
+func (r *Repo) RevCount(ctx context.Context, rev, path string) (int, error) {
+	if rev == "" {
+		rev = "HEAD"
+	}
+	args := []string{"rev-list", "--count", rev}
+	if path != "" {
+		args = append(args, "--", path)
+	}
+	out, err := r.run(ctx, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, fmt.Errorf("rev-list --count: %w", err)
+	}
+	return n, nil
+}
+
 // HeadShort returns the short HEAD hash, or empty if unavailable.
 func (r *Repo) HeadShort(ctx context.Context) string {
 	return r.RevShort(ctx, "HEAD")
@@ -403,8 +429,8 @@ type Ref struct {
 	Name    string // short name: main, origin/feature
 	Hash    string // short object name
 	Subject string
-	Current bool   // worktree HEAD points here
-	Remote  bool   // refs/remotes/…
+	Current bool // worktree HEAD points here
+	Remote  bool // refs/remotes/…
 }
 
 // ListBranches returns local then remote branches (newest tip first within each).

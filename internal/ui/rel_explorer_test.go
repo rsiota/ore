@@ -44,7 +44,7 @@ func TestRelExplorerLineMovedFrom(t *testing.T) {
 		Rev:          "HEAD",
 		PreviousPath: "old.go",
 		Previous: &git.Commit{
-			Hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			Hash:      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 			ShortHash: "bbbbbbb", Subject: "before",
 		},
 		History: []git.PathCommit{
@@ -139,11 +139,12 @@ func TestRelExplorerOwnership(t *testing.T) {
 	var e RelExplorer
 	e.SetSize(48, 20)
 	e.LoadCommit(git.CommitRelations{
-		Hash:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Subject: "root",
-		Author:  "a",
-		Email:   "a@b",
-		Files:   []git.FileChange{{Path: "a.go"}},
+		Hash:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Subject:   "root",
+		Author:    "a",
+		Email:     "a@b",
+		Files:     []git.FileChange{{Path: "a.go"}},
+		OwnSample: 20,
 		Ownership: []git.AuthorShare{
 			{Name: "alice", Count: 12, Pct: 60},
 			{Name: "bob", Count: 8, Pct: 40},
@@ -151,7 +152,7 @@ func TestRelExplorerOwnership(t *testing.T) {
 	})
 	foundSec, foundOwn := false, false
 	for _, n := range e.visibleNodes() {
-		if n.kind == relSection && n.label == "Ownership" {
+		if n.kind == relSection && n.label == "Ownership · last 20" {
 			foundSec = true
 		}
 		if n.kind == relOwn && n.author == "alice" {
@@ -195,7 +196,7 @@ func TestRelExplorerHotSpots(t *testing.T) {
 	found := false
 	var hot *relNode
 	for _, n := range e.visibleNodes() {
-		if n.kind == relSection && strings.Contains(n.label, "Often with") {
+		if n.kind == relSection && n.label == "Often with · last 8" {
 			found = true
 		}
 		if n.kind == relHotSpot && n.path == "b.go" {

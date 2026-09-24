@@ -118,4 +118,51 @@ func TestMergeBaseAndChildrenOf(t *testing.T) {
 	if err != nil || len(kids) != 1 || kids[0] != tip {
 		t.Fatalf("children=%v err=%v want [%s]", kids, err, tip)
 	}
+
+	toward, err := repo.ChildrenToward(ctx, root, tip)
+	if err != nil || len(toward) != 1 || toward[0] != tip {
+		t.Fatalf("toward=%v err=%v want [%s]", toward, err, tip)
+	}
+
+	// Cache must not hide a new child until ResetGraph.
+	if err := os.WriteFile(p, []byte("one\ntwo\nthree\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "a.txt")
+	run("commit", "-m", "newer")
+	log, err = repo.CommitLog(ctx, LogOptions{MaxCount: 5})
+	if err != nil || len(log) < 3 {
+		t.Fatalf("log3=%v err=%v", log, err)
+	}
+	newer := log[0].Hash
+	stale, err := repo.ChildrenOf(ctx, tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 0 {
+		t.Fatalf("cached children of tip = %v, want empty before reset", stale)
+	}
+	repo.ResetGraph()
+	fresh, err := repo.ChildrenOf(ctx, tip)
+	if err != nil || len(fresh) != 1 || fresh[0] != newer {
+		t.Fatalf("after reset children=%v err=%v want [%s]", fresh, err, newer)
+	}
+}
+
+func TestChildrenAmong(t *testing.T) {
+	parent := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	child := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	other := "cccccccccccccccccccccccccccccccccccccccc"
+	commits := []Commit{
+		{Hash: child, Parents: []string{parent}},
+		{Hash: other, Parents: []string{"dddddddddddddddddddddddddddddddddddddddd"}},
+		{Hash: parent},
+	}
+	got := ChildrenAmong(commits, parent)
+	if len(got) != 1 || got[0] != child {
+		t.Fatalf("got %v, want [%s]", got, child)
+	}
+	if ChildrenAmong(commits, "") != nil {
+		t.Fatal("empty hash should yield nil")
+	}
 }

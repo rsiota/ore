@@ -62,7 +62,7 @@ func (r *Repo) FileHistory(ctx context.Context, path string, opt LogOptions) ([]
 func (r *Repo) pathCommitLog(ctx context.Context, opt LogOptions) ([]PathCommit, error) {
 	limit := opt.MaxCount
 	if limit <= 0 {
-		limit = defaultLogLimit
+		limit = DefaultLogLimit
 	}
 	rev := opt.Rev
 	if rev == "" {

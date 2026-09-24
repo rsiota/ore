@@ -70,9 +70,12 @@ func TestPathOwnership(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	own, err := repo.PathOwnership(ctx, "HEAD", []string{"a.go"}, 50, 5)
+	own, sample, err := repo.PathOwnership(ctx, "HEAD", []string{"a.go"}, 50, 5)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if sample != 3 {
+		t.Fatalf("sample = %d, want 3", sample)
 	}
 	if len(own) < 2 || own[0].Name != "alice" || own[0].Count != 2 {
 		t.Fatalf("ownership=%#v", own)

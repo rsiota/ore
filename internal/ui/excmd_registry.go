@@ -127,6 +127,14 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"more"},
+			desc:  "load older commits (extends the log window)",
+			usage: ":more [count]",
+			run: func(m *Model, args []string) tea.Cmd {
+				return m.exMore(args)
+			},
+		},
+		{
 			verbs: []string{"bookmark", "bm"},
 			desc:  "bookmark the current view (optional name)",
 			usage: ":bookmark [name]",

@@ -63,6 +63,7 @@ func registry() []Section {
 				{"o", []string{"o"}, "cycle sort on current column (asc→desc→off)", "o"},
 				{"/", []string{"/"}, "filter current column", "/"},
 				{"enter", []string{"enter"}, "open files for commit", "enter"},
+				{"+", []string{"+"}, "load older commits when the log is capped", ""},
 			},
 		},
 		{
@@ -157,6 +158,7 @@ func registry() []Section {
 				{":couple", []string{":"}, "commits where two paths co-occur", ""},
 				{":authors", []string{":"}, "commits by an author on these paths", ""},
 				{":nohl", []string{":"}, "clear pickaxe match washes", ""},
+				{":more", []string{":"}, "load older commits (capped log window)", ""},
 				{"j/k", []string{"j", "k"}, "move in pickaxe/couple/authors results", "j/k"},
 				{"enter", []string{"enter"}, "open path history (or files)", "enter"},
 				{"b", []string{"b"}, "blame hit path at commit", "b"},

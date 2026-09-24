@@ -127,6 +127,7 @@ North star: make **line → previous versions → co-changed regions → authors
 8. [x] **Hunk-centric mode** — `H` / `:hunks` docks a bottom hunk list; `Tab` focuses it; `j/k`/`[`/`]` jump detail (and yank when focused)
 9. [x] **Quiet ownership summary** — top authors with % in `g r` (path history / recent log sample); muted rows, author-hued names
 10. [x] **Ownership → author commits** — `Enter` on an Ownership row (or `:authors`) lists that author's commits on those paths
+11. [x] **Honest scale** — commit window `500/N` + `:more` / `+` / `j` at end; sample labels on Ownership / Often-with; capped titles on pickaxe / couple / authors / history / evolve; children hops invert the loaded log (then `hash..tip`, then a cached `--all`)
 
 Later (when the above feels sticky): timeline strip, export provenance trail, large-repo caching. Keep AI/charts/PR links optional and thin.
 

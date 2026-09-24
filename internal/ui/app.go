@@ -78,18 +78,18 @@ type Model struct {
 	blame           []git.BlameLine
 	blamePath       string
 	blameRev        string
-	blameCursor      int
-	blameOffset      int
-	blameCol         int
-	blameCodeScroll  int // horizontal offset for long code lines
-	blameGutterFold  int // 0..3; default hides age+author (line/commit/code)
-	blameFilterCol   int
-	blameSortCol     int
-	blameSortDir     SortDir
-	blameFrom        MainView // MainFiles or MainHistory
-	blamePreferLine  int
-	loadingBlame     bool
-	chordG           bool // pending g-prefix for gg / gf in blame
+	blameCursor     int
+	blameOffset     int
+	blameCol        int
+	blameCodeScroll int // horizontal offset for long code lines
+	blameGutterFold int // 0..3; default hides age+author (line/commit/code)
+	blameFilterCol  int
+	blameSortCol    int
+	blameSortDir    SortDir
+	blameFrom       MainView // MainFiles or MainHistory
+	blamePreferLine int
+	loadingBlame    bool
+	chordG          bool // pending g-prefix for gg / gf in blame
 
 	evo           []git.LineEvolutionStep
 	evoCursor     int
@@ -99,34 +99,34 @@ type Model struct {
 	evoOriginPath string // blame path when evolution opened (esc restore)
 	evoOriginRev  string
 
-	pickaxe      []git.PickaxeHit
-	pickCursor   int
-	pickOffset   int
-	pickCol      int
-	pickQuery    string
-	pickMode     git.PickaxeMode
-	pickPath     string // optional path limiter used for the search
-	pickKind     hitListKind
-	loadingPick  bool
-	pickaxeFrom  MainView // view to restore on esc
-	pickaxeDive  bool     // drilled from pickaxe into history/files/blame
-	pickHlOn     bool     // wash matching spans in detail/blame
+	pickaxe       []git.PickaxeHit
+	pickCursor    int
+	pickOffset    int
+	pickCol       int
+	pickQuery     string
+	pickMode      git.PickaxeMode
+	pickPath      string // optional path limiter used for the search
+	pickKind      hitListKind
+	loadingPick   bool
+	pickaxeFrom   MainView // view to restore on esc
+	pickaxeDive   bool     // drilled from pickaxe into history/files/blame
+	pickHlOn      bool     // wash matching spans in detail/blame
 	coupleSeeds   []string // seeds for an Often-with couple drill
 	couplePartner string
-	authorFilter  string   // author name for an Ownership / :authors drill
+	authorFilter  string // author name for an Ownership / :authors drill
 	authorPaths   []string
 	authorRev     string
 
-	detail           *git.CommitDetail
-	detailFilterPath string // path requested by the in-flight / latest reloadDetail
-	detailPath       string // path the current detail payload was loaded with ("" = whole commit)
-	detailExpectHash string // if set, detail load may target this hash (e.g. :goto)
-	detailOffset     int
-	diffMode         DiffMode // zen (default) or unified patch
-	zenContext       int      // git -U / in-hunk context lines
-	detailWrap       bool     // soft-wrap long detail lines
-	detailTruncated    bool // patch soft-capped for responsiveness
-	detailPatchPending bool // header fetched; waiting to paint until patch arrives
+	detail             *git.CommitDetail
+	detailFilterPath   string // path requested by the in-flight / latest reloadDetail
+	detailPath         string // path the current detail payload was loaded with ("" = whole commit)
+	detailExpectHash   string // if set, detail load may target this hash (e.g. :goto)
+	detailOffset       int
+	diffMode           DiffMode          // zen (default) or unified patch
+	zenContext         int               // git -U / in-hunk context lines
+	detailWrap         bool              // soft-wrap long detail lines
+	detailTruncated    bool              // patch soft-capped for responsiveness
+	detailPatchPending bool              // header fetched; waiting to paint until patch arrives
 	detailPending      *git.CommitDetail // staged header; not shown until patch lands
 	detailDebounceSeq  int
 	detailLoadSeq      int
@@ -174,6 +174,10 @@ type Model struct {
 	// than the initial load: restore the commit cursor to this hash and keep
 	// the current main view.
 	refreshPreferHash string
+
+	logLimit     int  // MaxCount last requested (0 = default)
+	logTotal     int  // rev-list --count for the viewed tip; 0 = unknown
+	logExtending bool // true while :more / j-at-end is fetching older commits
 
 	theme         string // active palette name (light|dark)
 	transparentBg bool   // skip theme bg paint (terminal transparency)
@@ -236,6 +240,8 @@ func New(repo *git.Repo) Model {
 
 type commitsLoadedMsg struct {
 	commits []git.Commit
+	total   int
+	limit   int
 	branch  string
 	head    string
 	err     error
@@ -292,17 +298,28 @@ type relationsLoadedMsg struct {
 	err    error
 }
 
-func loadCommitsCmd(repo *git.Repo, rev string) tea.Cmd {
+func loadCommitsCmd(repo *git.Repo, rev string, limit int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		commits, err := repo.CommitLog(ctx, git.LogOptions{Rev: rev})
+		if limit <= 0 {
+			limit = git.DefaultLogLimit
+		}
+		commits, err := repo.CommitLog(ctx, git.LogOptions{Rev: rev, MaxCount: limit})
 		tip := rev
 		if tip == "" {
 			tip = "HEAD"
 		}
+		total := 0
+		if err == nil {
+			if n, cerr := repo.RevCount(ctx, tip, ""); cerr == nil {
+				total = n
+			}
+		}
 		return commitsLoadedMsg{
 			commits: commits,
+			total:   total,
+			limit:   limit,
 			branch:  repo.BranchName(ctx),
 			head:    repo.RevShort(ctx, tip),
 			err:     err,
@@ -432,7 +449,7 @@ func loadRelExpandCmd(repo *git.Repo, hash, nodeID string) tea.Cmd {
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	return loadCommitsCmd(m.repo, m.viewRev)
+	return loadCommitsCmd(m.repo, m.viewRev, m.logLimit)
 }
 
 // Update implements tea.Model.
@@ -457,9 +474,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commits = msg.commits
 		m.branch = msg.branch
 		m.head = msg.head
+		if msg.limit > 0 {
+			m.logLimit = msg.limit
+		}
+		m.logTotal = msg.total
+		window := m.commitsWindowText()
+		if m.logCapped() {
+			window += " · :more"
+		}
 		if prefer != "" {
 			m.restoreCommitCursor(prefer)
-			m.status = fmt.Sprintf("refreshed · %d commits", len(m.commits))
+			if m.logExtending {
+				m.status = window
+			} else {
+				m.status = "refreshed · " + window
+			}
+			m.logExtending = false
 			return m, m.afterRefreshCmds()
 		}
 		if m.pendingRestore != nil {
@@ -468,7 +498,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 		m.commitOffset = 0
 		m.main = MainCommits
-		m.status = fmt.Sprintf("%d commits", len(m.commits))
+		m.status = window
 		if len(m.commits) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -530,7 +560,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.restoreAfterHistory && m.pendingRestore != nil {
 			return m, m.finishRestoreHistory()
 		}
-		m.status = fmt.Sprintf("history · %s · %d commits · b/enter blame", m.historyPath, len(m.history))
+		m.status = fmt.Sprintf("history · %s · %d commits%s · b/enter blame", m.historyPath, len(m.history), cappedSuffix(len(m.history), git.DefaultLogLimit))
 		if len(m.history) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -603,8 +633,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.main = MainLineEvo
 		m.focus = FocusMain
 		m.chordG = false
-		m.status = fmt.Sprintf("evolve · %s · %d steps · enter blame · esc back",
-			m.evoOriginPath, len(m.evo))
+		m.status = fmt.Sprintf("evolve · %s · %d steps%s · enter blame · esc back",
+			m.evoOriginPath, len(m.evo), cappedSuffix(len(m.evo), git.DefaultEvolutionLimit))
 		if len(m.evo) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -630,8 +660,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.main = MainPickaxe
 		m.focus = FocusMain
 		m.chordG = false
-		m.status = fmt.Sprintf("pickaxe · %s %q · %d hits · enter files · b blame · esc back",
-			pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe))
+		m.status = fmt.Sprintf("pickaxe · %s %q · %d hits%s · enter files · b blame · esc back",
+			pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe), cappedSuffix(len(m.pickaxe), git.DefaultPickaxeLimit))
 		if m.pickHlOn {
 			m.status += " · hl on"
 		}
@@ -664,8 +694,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.main = MainPickaxe
 		m.focus = FocusMain
 		m.chordG = false
-		m.status = fmt.Sprintf("couple · %s · %d commits · enter · b blame · esc back",
-			truncateQuery(msg.label, 40), len(m.pickaxe))
+		m.status = fmt.Sprintf("couple · %s · %d commits%s · enter · b blame · esc back",
+			truncateQuery(msg.label, 40), len(m.pickaxe), cappedSuffix(len(m.pickaxe), git.CoChangeCommitCap))
 		if len(m.pickaxe) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -699,8 +729,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.main = MainPickaxe
 		m.focus = FocusMain
 		m.chordG = false
-		m.status = fmt.Sprintf("authors · %s · %d commits · enter · b blame · esc back",
-			truncateQuery(msg.label, 40), len(m.pickaxe))
+		m.status = fmt.Sprintf("authors · %s · %d commits%s · enter · b blame · esc back",
+			truncateQuery(msg.label, 40), len(m.pickaxe), cappedSuffix(len(m.pickaxe), git.OwnershipCommitCap))
 		if len(m.pickaxe) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -1275,7 +1305,14 @@ func (m *Model) refreshStatus() {
 	}
 	switch m.main {
 	case MainCommits:
-		m.status = fmt.Sprintf("%d commits", len(m.commitIndices()))
+		if m.filter != "" {
+			m.status = fmt.Sprintf("%d commits", len(m.commitIndices()))
+		} else {
+			m.status = m.commitsWindowText()
+			if m.logCapped() {
+				m.status += " · :more"
+			}
+		}
 		if m.commitSortDir != SortNone && m.commitSortCol >= 0 && m.commitSortCol < len(commitColumns) {
 			m.status += fmt.Sprintf(" · sort %s%s", commitColumns[m.commitSortCol], m.commitSortDir.Arrow())
 		}
@@ -1299,7 +1336,7 @@ func (m *Model) refreshStatus() {
 			m.status += " · /" + col + m.filter
 		}
 	case MainHistory:
-		m.status = fmt.Sprintf("history · %s · %d commits", m.historyPath, len(m.historyIndices()))
+		m.status = fmt.Sprintf("history · %s · %d commits%s", m.historyPath, len(m.historyIndices()), cappedSuffix(len(m.history), git.DefaultLogLimit))
 		if pc, ok := m.selectedHistory(); ok {
 			if edge := pc.EdgeLabel(); edge != "" {
 				m.status += " · " + edge
@@ -1339,7 +1376,7 @@ func (m *Model) refreshStatus() {
 			m.status += " · /" + col + m.filter
 		}
 	case MainLineEvo:
-		m.status = fmt.Sprintf("evolve · %s · %d steps", m.evoOriginPath, len(m.evo))
+		m.status = fmt.Sprintf("evolve · %s · %d steps%s", m.evoOriginPath, len(m.evo), cappedSuffix(len(m.evo), git.DefaultEvolutionLimit))
 		if len(m.evo) > 0 && m.evoCursor >= 0 && m.evoCursor < len(m.evo) {
 			s := m.evo[m.evoCursor]
 			m.status += fmt.Sprintf(" · #%d %s:%d", s.Index, shortHash(s.Line.Hash), s.Line.Line)
@@ -1388,7 +1425,7 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		m.focus = FocusMain
 		if m.blameFrom == MainLineEvo && len(m.evo) > 0 {
 			m.main = MainLineEvo
-			m.status = fmt.Sprintf("evolve · %s · %d steps · enter blame · esc back", m.evoOriginPath, len(m.evo))
+			m.status = fmt.Sprintf("evolve · %s · %d steps%s · enter blame · esc back", m.evoOriginPath, len(m.evo), cappedSuffix(len(m.evo), git.DefaultEvolutionLimit))
 			return m, m.reloadDetail()
 		}
 		if m.blameFrom == MainPickaxe && m.pickQuery != "" {
@@ -1400,7 +1437,7 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		m.evo = nil
 		if m.blameFrom == MainHistory && m.historyPath != "" {
 			m.main = MainHistory
-			m.status = fmt.Sprintf("history · %s · %d commits", m.historyPath, len(m.history))
+			m.status = fmt.Sprintf("history · %s · %d commits%s", m.historyPath, len(m.history), cappedSuffix(len(m.history), git.DefaultLogLimit))
 			return m, m.reloadDetail()
 		}
 		m.main = MainFiles
@@ -1409,7 +1446,7 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 			return m, m.reloadDetail()
 		}
 		m.main = MainCommits
-		m.status = fmt.Sprintf("%d commits", len(m.commits))
+		m.status = m.commitsWindowText()
 		return m, m.reloadDetail()
 	case MainHistory:
 		m.history = nil
@@ -1426,7 +1463,7 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 			return m, m.reloadDetail()
 		}
 		m.main = MainCommits
-		m.status = fmt.Sprintf("%d commits", len(m.commits))
+		m.status = m.commitsWindowText()
 		return m, m.reloadDetail()
 	case MainFiles:
 		m.files = nil
@@ -1439,7 +1476,7 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 			return m, m.reloadDetail()
 		}
 		m.main = MainCommits
-		m.status = fmt.Sprintf("%d commits", len(m.commits))
+		m.status = m.commitsWindowText()
 		return m, m.reloadDetail()
 	default:
 		return m, nil
@@ -1586,11 +1623,22 @@ func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.String() {
+	case "+":
+		if cmd := m.loadMore(0); cmd != nil {
+			return m, cmd
+		}
+		if !m.logCapped() {
+			m.status = "already showing all commits"
+		}
+		return m, nil
 	case "j", "down":
 		if m.cursor < n-1 {
 			m.cursor++
 			m.ensureCommitVisible()
 			return m, m.reloadDetail()
+		}
+		if cmd := m.loadMore(0); cmd != nil {
+			return m, cmd
 		}
 	case "k", "up":
 		if m.cursor > 0 {
@@ -1607,6 +1655,11 @@ func (m Model) handleCommitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureCommitVisible()
 		return m, m.reloadDetail()
 	case "ctrl+d":
+		if m.cursor >= n-1 {
+			if cmd := m.loadMore(0); cmd != nil {
+				return m, cmd
+			}
+		}
 		m.cursor = min(n-1, m.cursor+m.mainPage())
 		m.ensureCommitVisible()
 		return m, m.reloadDetail()
@@ -2304,9 +2357,13 @@ func (m *Model) refresh() tea.Cmd {
 	m.chordG = false
 	m.refreshPreferHash = m.commitListHash()
 	m.loading = true
+	m.logExtending = false
 	m.err = ""
 	m.status = "refreshing…"
-	return loadCommitsCmd(m.repo, m.viewRev)
+	if m.repo != nil {
+		m.repo.ResetGraph()
+	}
+	return loadCommitsCmd(m.repo, m.viewRev, m.logLimit)
 }
 
 // openBranchPicker loads refs then shows the fuzzy branch popup.
@@ -2347,6 +2404,9 @@ func (m *Model) applyViewRev(ref git.Ref) tea.Cmd {
 	m.filter = ""
 	m.filterTyping = false
 	m.refreshPreferHash = ""
+	m.logLimit = 0
+	m.logTotal = 0
+	m.logExtending = false
 	m.loading = true
 	m.err = ""
 	if m.viewRev == "" {
@@ -2354,7 +2414,7 @@ func (m *Model) applyViewRev(ref git.Ref) tea.Cmd {
 	} else {
 		m.status = fmt.Sprintf("viewing %s…", m.viewRev)
 	}
-	return loadCommitsCmd(m.repo, m.viewRev)
+	return loadCommitsCmd(m.repo, m.viewRev, 0)
 }
 
 // switchViewRev jumps to a named ref (or HEAD) without opening the picker.
@@ -2915,21 +2975,30 @@ func (m Model) mainTitle() string {
 	case MainFiles:
 		return "files"
 	case MainHistory:
+		if len(m.history) >= git.DefaultLogLimit {
+			return fmt.Sprintf("history · %d+", len(m.history))
+		}
 		return "history"
 	case MainBlame:
 		return "blame"
 	case MainLineEvo:
+		if len(m.evo) >= git.DefaultEvolutionLimit {
+			return fmt.Sprintf("evolve · %d+", len(m.evo))
+		}
 		return "evolve"
 	case MainPickaxe:
+		title, limit := "pickaxe", git.DefaultPickaxeLimit
 		if m.pickKind == hitListCouple {
-			return "couple"
+			title, limit = "couple", git.CoChangeCommitCap
+		} else if m.pickKind == hitListAuthors {
+			title, limit = "authors", git.OwnershipCommitCap
 		}
-		if m.pickKind == hitListAuthors {
-			return "authors"
+		if len(m.pickaxe) >= limit {
+			return fmt.Sprintf("%s · %d+", title, len(m.pickaxe))
 		}
-		return "pickaxe"
+		return title
 	default:
-		return "commits"
+		return m.commitsTitle()
 	}
 }
 

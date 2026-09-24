@@ -7,6 +7,30 @@ import (
 	"github.com/rsiota/ore/internal/git"
 )
 
+func TestJumpDagChildUsesLoadedLog(t *testing.T) {
+	parent := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	child := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	m := Model{
+		main: MainCommits,
+		commits: []git.Commit{
+			{Hash: child, ShortHash: "bbbbbbb", Subject: "tip", Parents: []string{parent}},
+			{Hash: parent, ShortHash: "aaaaaaa", Subject: "base"},
+		},
+		cursor: 1,
+	}
+	mm, cmd := m.jumpDagChild()
+	m = mm.(Model)
+	if m.cursor != 0 {
+		t.Fatalf("cursor=%d want 0 (child in log)", m.cursor)
+	}
+	if !strings.Contains(m.status, "child") {
+		t.Fatalf("status=%q", m.status)
+	}
+	if cmd == nil {
+		t.Fatal("expected reload detail")
+	}
+}
+
 func TestJumpDagParent(t *testing.T) {
 	parent := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	child := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

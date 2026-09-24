@@ -74,6 +74,11 @@ func TestOpenAndCommitLog(t *testing.T) {
 		t.Errorf("oldest subject = %q", commits[1].Subject)
 	}
 
+	total, err := repo.RevCount(ctx, "", "")
+	if err != nil || total != 2 {
+		t.Fatalf("RevCount = %d, %v, want 2", total, err)
+	}
+
 	detail, err := repo.Show(ctx, commits[0].Hash, 3)
 	if err != nil {
 		t.Fatal(err)

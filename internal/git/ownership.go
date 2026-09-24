@@ -17,15 +17,15 @@ type AuthorShare struct {
 }
 
 const (
-	ownershipSample    = 200
-	ownershipTop       = 5
-	ownershipCommitCap = 100
+	OwnershipSample    = 200 // commits examined for a PathOwnership rollup
+	OwnershipTop       = 5   // authors returned
+	OwnershipCommitCap = 100 // PathAuthorCommits default window
 )
 
 // SummarizeAuthors counts names and returns the top shares (quiet rollup).
 func SummarizeAuthors(names []string, top int) []AuthorShare {
 	if top <= 0 {
-		top = ownershipTop
+		top = OwnershipTop
 	}
 	counts := map[string]int{}
 	order := make([]string, 0)
@@ -73,19 +73,20 @@ func SummarizeAuthors(names []string, top int) []AuthorShare {
 }
 
 // PathOwnership samples recent authors of paths at rev (newest-first log).
-func (r *Repo) PathOwnership(ctx context.Context, rev string, paths []string, sample, top int) ([]AuthorShare, error) {
+// The int is how many commits were examined (the sample, not the top-N count).
+func (r *Repo) PathOwnership(ctx context.Context, rev string, paths []string, sample, top int) ([]AuthorShare, int, error) {
 	paths = uniquePaths(paths)
 	if len(paths) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 	if rev == "" {
 		rev = "HEAD"
 	}
 	if sample <= 0 {
-		sample = ownershipSample
+		sample = OwnershipSample
 	}
 	if top <= 0 {
-		top = ownershipTop
+		top = OwnershipTop
 	}
 	if len(paths) > coChangeMaxSeeds {
 		paths = paths[:coChangeMaxSeeds]
@@ -100,7 +101,7 @@ func (r *Repo) PathOwnership(ctx context.Context, rev string, paths []string, sa
 	args = append(args, paths...)
 	out, err := r.run(ctx, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	raw := strings.Split(strings.TrimSpace(string(out)), "\n")
 	names := make([]string, 0, len(raw))
@@ -110,7 +111,7 @@ func (r *Repo) PathOwnership(ctx context.Context, rev string, paths []string, sa
 			names = append(names, line)
 		}
 	}
-	return SummarizeAuthors(names, top), nil
+	return SummarizeAuthors(names, top), len(names), nil
 }
 
 // PathAuthorCommits lists newest-first commits by author that touched paths
@@ -128,7 +129,7 @@ func (r *Repo) PathAuthorCommits(ctx context.Context, author, rev string, paths 
 		rev = "HEAD"
 	}
 	if maxCount <= 0 {
-		maxCount = ownershipCommitCap
+		maxCount = OwnershipCommitCap
 	}
 
 	format := recSep + strings.Join([]string{

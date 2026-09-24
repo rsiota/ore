@@ -143,12 +143,12 @@ func (m Model) hitListShortStatus() string {
 	label := truncateQuery(m.pickQuery, 32)
 	n := len(m.pickaxe)
 	if m.pickKind == hitListCouple {
-		return fmt.Sprintf("couple · %s · %d commits", label, n)
+		return fmt.Sprintf("couple · %s · %d commits%s", label, n, cappedSuffix(n, git.CoChangeCommitCap))
 	}
 	if m.pickKind == hitListAuthors {
-		return fmt.Sprintf("authors · %s · %d commits", label, n)
+		return fmt.Sprintf("authors · %s · %d commits%s", label, n, cappedSuffix(n, git.OwnershipCommitCap))
 	}
-	s := fmt.Sprintf("pickaxe · %s %q · %d hits", pickaxeModeLabel(m.pickMode), label, n)
+	s := fmt.Sprintf("pickaxe · %s %q · %d hits%s", pickaxeModeLabel(m.pickMode), label, n, cappedSuffix(n, git.DefaultPickaxeLimit))
 	if m.pickHlOn {
 		s += " · hl · :nohl"
 	}

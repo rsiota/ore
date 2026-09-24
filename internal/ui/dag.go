@@ -7,15 +7,16 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/rsiota/ore/internal/git"
 )
 
 // dagJumpMsg is the result of an async soft DAG hop (child / merge-base).
 type dagJumpMsg struct {
-	kind   string // "child" | "merge-base"
-	from   string
-	to     string
-	total  int // candidates (children count, or 1 for merge-base)
-	err    error
+	kind  string // "child" | "merge-base"
+	from  string
+	to    string
+	total int // candidates (children count, or 1 for merge-base)
+	err   error
 }
 
 func (m Model) selectedCommitParents() []string {
@@ -88,18 +89,37 @@ func (m Model) jumpDagParent() (tea.Model, tea.Cmd) {
 // jumpDagChild loads direct children and jumps to the first one.
 func (m Model) jumpDagChild() (tea.Model, tea.Cmd) {
 	from := m.dagSourceHash()
-	if from == "" || m.repo == nil {
+	if from == "" {
+		m.status = "dag · no commit"
+		return m, nil
+	}
+	if kids := git.ChildrenAmong(m.commits, from); len(kids) > 0 {
+		note := ""
+		if len(kids) > 1 {
+			note = fmt.Sprintf(" · 1/%d", len(kids))
+		}
+		cmd := (&m).applyDagJump("child", kids[0], len(kids), note)
+		return m, cmd
+	}
+	if m.repo == nil {
 		m.status = "dag · no commit"
 		return m, nil
 	}
 	m.status = "dag · finding children…"
 	repo := m.repo
+	tip := m.dagTipRev()
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
-		kids, err := repo.ChildrenOf(ctx, from)
+		kids, err := repo.ChildrenToward(ctx, from, tip)
 		if err != nil {
 			return dagJumpMsg{kind: "child", from: from, err: err}
+		}
+		if len(kids) == 0 {
+			kids, err = repo.ChildrenOf(ctx, from)
+			if err != nil {
+				return dagJumpMsg{kind: "child", from: from, err: err}
+			}
 		}
 		if len(kids) == 0 {
 			return dagJumpMsg{kind: "child", from: from, total: 0}

@@ -54,8 +54,8 @@ type RelExplorer struct {
 	seq    int // expand request id
 }
 
-func (e *RelExplorer) Open()  { e.open = true }
-func (e *RelExplorer) Close() { e.open = false; e.root = nil; e.cursor = 0; e.offset = 0 }
+func (e *RelExplorer) Open()       { e.open = true }
+func (e *RelExplorer) Close()      { e.open = false; e.root = nil; e.cursor = 0; e.offset = 0 }
 func (e RelExplorer) Opened() bool { return e.open }
 
 func (e *RelExplorer) SetSize(w, h int) {
@@ -163,7 +163,7 @@ func buildLineRoot(rel git.LineRelations, e *RelExplorer) []*relNode {
 		seeds = append(seeds, rel.PreviousPath)
 	}
 	roots = append(roots, hotSpotNodes(rel.HotSpots, 0, nil, rel.Rev, seeds)...)
-	roots = append(roots, ownershipNodes(rel.Ownership, 0, nil, rel.Rev, seeds)...)
+	roots = append(roots, ownershipNodes(rel.Ownership, rel.OwnSample, 0, nil, rel.Rev, seeds)...)
 	return roots
 }
 
@@ -200,7 +200,7 @@ func commitRelationBlocks(rel git.CommitRelations, depth int, parent *relNode, e
 		})
 	}
 	out = append(out, hotSpotNodes(rel.HotSpots, depth, parent, rel.Hash, seedPathsFromFiles(rel.Files))...)
-	out = append(out, ownershipNodes(rel.Ownership, depth, parent, rel.Hash, seedPathsFromFiles(rel.Files))...)
+	out = append(out, ownershipNodes(rel.Ownership, rel.OwnSample, depth, parent, rel.Hash, seedPathsFromFiles(rel.Files))...)
 	return out
 }
 
@@ -215,6 +215,23 @@ func seedPathsFromFiles(files []git.FileChange) []string {
 	return seeds
 }
 
+func oftenWithLabel(hot []git.CoChange) string {
+	if len(hot) == 0 {
+		return "Often with"
+	}
+	if hot[0].Total > 0 {
+		return fmt.Sprintf("Often with · last %d", hot[0].Total)
+	}
+	return fmt.Sprintf("Often with (%d)", len(hot))
+}
+
+func ownershipLabel(_ []git.AuthorShare, sample int) string {
+	if sample > 0 {
+		return fmt.Sprintf("Ownership · last %d", sample)
+	}
+	return "Ownership"
+}
+
 // hotSpotNodes builds the "Often with" section for co-changed paths.
 func hotSpotNodes(hot []git.CoChange, depth int, parent *relNode, rev string, seeds []string) []*relNode {
 	if len(hot) == 0 {
@@ -224,7 +241,7 @@ func hotSpotNodes(hot []git.CoChange, depth int, parent *relNode, rev string, se
 	var out []*relNode
 	out = append(out, &relNode{
 		kind: relSection, depth: depth, parent: parent,
-		label: fmt.Sprintf("Often with (%d)", len(hot)),
+		label: oftenWithLabel(hot),
 	})
 	for _, h := range hot {
 		out = append(out, &relNode{
@@ -237,14 +254,14 @@ func hotSpotNodes(hot []git.CoChange, depth int, parent *relNode, rev string, se
 }
 
 // ownershipNodes builds a quiet top-authors rollup; Enter drills that author.
-func ownershipNodes(own []git.AuthorShare, depth int, parent *relNode, rev string, seeds []string) []*relNode {
+func ownershipNodes(own []git.AuthorShare, sample, depth int, parent *relNode, rev string, seeds []string) []*relNode {
 	if len(own) == 0 {
 		return nil
 	}
 	seeds = append([]string(nil), seeds...)
 	out := []*relNode{{
 		kind: relSection, depth: depth, parent: parent,
-		label: "Ownership",
+		label: ownershipLabel(own, sample),
 	}}
 	for _, a := range own {
 		out = append(out, &relNode{

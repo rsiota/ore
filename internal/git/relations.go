@@ -8,15 +8,16 @@ import (
 
 // CommitRelations is the graph neighbourhood of one commit.
 type CommitRelations struct {
-	Hash       string
-	Subject    string
-	Author     string
-	Email      string
-	Parents    []Commit
-	Children   []Commit
-	Files      []FileChange
-	HotSpots   []CoChange    // paths that often change with this commit's files
-	Ownership  []AuthorShare // quiet author mix for the commit's paths
+	Hash      string
+	Subject   string
+	Author    string
+	Email     string
+	Parents   []Commit
+	Children  []Commit
+	Files     []FileChange
+	HotSpots  []CoChange    // paths that often change with this commit's files
+	Ownership []AuthorShare // quiet author mix for the commit's paths
+	OwnSample int           // commits examined for Ownership (sample, not top-N)
 }
 
 // LineRelations is archaeology context for one blamed line.
@@ -29,6 +30,7 @@ type LineRelations struct {
 	PreviousPath string       // porcelain previous path when it differs / is set
 	HotSpots     []CoChange
 	Ownership    []AuthorShare // quiet author mix from path history
+	OwnSample    int           // authors/commits examined for Ownership
 }
 
 // Relations returns parents, children, and files for hash.
@@ -74,8 +76,9 @@ func (r *Repo) Relations(ctx context.Context, hash string) (CommitRelations, err
 	if hot, err := r.CoChangedFiles(ctx, seeds, out.Hash); err == nil {
 		out.HotSpots = hot
 	}
-	if own, err := r.PathOwnership(ctx, out.Hash, seeds, ownershipSample, ownershipTop); err == nil {
+	if own, sample, err := r.PathOwnership(ctx, out.Hash, seeds, OwnershipSample, OwnershipTop); err == nil {
 		out.Ownership = own
+		out.OwnSample = sample
 	}
 	return out, nil
 }
@@ -110,7 +113,13 @@ func (r *Repo) LineRelationsAt(ctx context.Context, path, rev string, line Blame
 			names = append(names, c.Author)
 		}
 	}
-	out.Ownership = SummarizeAuthors(names, ownershipTop)
+	out.Ownership = SummarizeAuthors(names, OwnershipTop)
+	out.OwnSample = 0
+	for _, n := range names {
+		if strings.TrimSpace(n) != "" {
+			out.OwnSample++
+		}
+	}
 	return out, nil
 }
 
@@ -130,37 +139,125 @@ func (r *Repo) commitSummary(ctx context.Context, hash string) (Commit, error) {
 	return commits[0], nil
 }
 
-// childHashes returns direct children of hash in this repo.
-func (r *Repo) childHashes(ctx context.Context, hash string) ([]string, error) {
-	fullOut, err := r.run(ctx, "rev-parse", hash)
-	if err != nil {
-		return nil, err
+// ChildrenAmong returns hashes in commits that list hash as a parent
+// (newest-first when commits is newest-first). Used to hop `c` without git.
+func ChildrenAmong(commits []Commit, hash string) []string {
+	hash = strings.TrimSpace(hash)
+	if hash == "" {
+		return nil
 	}
-	full := strings.TrimSpace(string(fullOut))
-
-	// rev-list HASH only walks ancestors; --all --children is needed for kids.
-	out, err := r.run(ctx, "rev-list", "--children", "--all")
-	if err != nil {
-		return nil, err
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		if fields[0] == full || strings.HasPrefix(full, fields[0]) || strings.HasPrefix(fields[0], full) {
-			if len(fields) == 1 {
-				return nil, nil
+	var kids []string
+	for _, c := range commits {
+		for _, p := range c.Parents {
+			if hashMatch(p, hash) {
+				kids = append(kids, c.Hash)
+				break
 			}
-			return fields[1:], nil
+		}
+	}
+	return kids
+}
+
+// ResetGraph drops the cached children map (call after the repo may have moved).
+func (r *Repo) ResetGraph() {
+	if r == nil {
+		return
+	}
+	r.graphMu.Lock()
+	r.childByHash = nil
+	r.graphMu.Unlock()
+}
+
+// childHashes returns direct children of hash in this repo (cached after first walk).
+func (r *Repo) childHashes(ctx context.Context, hash string) ([]string, error) {
+	full, err := r.revParseFull(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+	graph, err := r.childrenGraph(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if kids, ok := graph[full]; ok {
+		return append([]string(nil), kids...), nil
+	}
+	for k, v := range graph {
+		if hashMatch(k, full) {
+			return append([]string(nil), v...), nil
 		}
 	}
 	return nil, nil
 }
 
+func (r *Repo) revParseFull(ctx context.Context, hash string) (string, error) {
+	out, err := r.run(ctx, "rev-parse", hash)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func (r *Repo) childrenGraph(ctx context.Context) (map[string][]string, error) {
+	r.graphMu.Lock()
+	defer r.graphMu.Unlock()
+	if r.childByHash != nil {
+		return r.childByHash, nil
+	}
+	// One --all walk per session; ResetGraph after refresh.
+	out, err := r.run(ctx, "rev-list", "--children", "--all")
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string][]string)
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if len(fields) == 1 {
+			m[fields[0]] = nil
+			continue
+		}
+		m[fields[0]] = append([]string(nil), fields[1:]...)
+	}
+	r.childByHash = m
+	return m, nil
+}
+
 // ChildrenOf returns direct child commit hashes of hash (may be empty).
 func (r *Repo) ChildrenOf(ctx context.Context, hash string) ([]string, error) {
 	return r.childHashes(ctx, hash)
+}
+
+// ChildrenToward returns direct children of hash that lie on the path to tip
+// (typically HEAD / the viewed branch). Cheaper than ChildrenOf on a large repo.
+func (r *Repo) ChildrenToward(ctx context.Context, hash, tip string) ([]string, error) {
+	if tip == "" {
+		tip = "HEAD"
+	}
+	full, err := r.revParseFull(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+	out, err := r.run(ctx, "rev-list", "--parents", full+".."+tip)
+	if err != nil {
+		return nil, err
+	}
+	var kids []string
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		commit := fields[0]
+		for _, p := range fields[1:] {
+			if hashMatch(p, full) {
+				kids = append(kids, commit)
+				break
+			}
+		}
+	}
+	return kids, nil
 }
 
 // MergeBase returns the best common ancestor of a and b.

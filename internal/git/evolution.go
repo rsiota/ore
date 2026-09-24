@@ -13,7 +13,8 @@ type LineEvolutionStep struct {
 	Line  BlameLine
 }
 
-const defaultEvolutionLimit = 40
+// DefaultEvolutionLimit is the walk cap when maxSteps is 0.
+const DefaultEvolutionLimit = 40
 
 // LineEvolution walks porcelain `previous` from start, building a navigable
 // provenance stack for one logical line. start is the line as currently shown
@@ -27,7 +28,7 @@ func (r *Repo) LineEvolution(ctx context.Context, path, rev string, start BlameL
 		rev = "HEAD"
 	}
 	if maxSteps <= 0 {
-		maxSteps = defaultEvolutionLimit
+		maxSteps = DefaultEvolutionLimit
 	}
 	if start.Line < 1 {
 		return nil, fmt.Errorf("line must be >= 1")
