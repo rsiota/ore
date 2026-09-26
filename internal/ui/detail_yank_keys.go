@@ -19,17 +19,19 @@ func (m Model) detailYankLines() []string {
 }
 
 func (m *Model) enterDetailYank() {
-	lines := m.detailYankLines()
-	m.yank.reset()
 	row := m.detailOffset
 	if row < 0 {
 		row = 0
 	}
-	if len(lines) > 0 && row >= len(lines) {
-		row = len(lines) - 1
-	}
-	m.yank.row, m.yank.col = clampYankPos(lines, row, 0)
+	m.enterDetailYankAt(row, 0)
+}
+
+func (m *Model) enterDetailYankAt(row, col int) {
+	lines := m.detailYankLines()
+	m.yank.reset()
+	m.yank.row, m.yank.col = clampYankPos(lines, row, col)
 	m.focus = FocusDetail
+	m.ensureYankVisible(m.detailViewHeight())
 	m.status = "detail · " + m.yank.modeLabel()
 }
 

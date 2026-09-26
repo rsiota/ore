@@ -368,6 +368,16 @@ func hasSelectableNodes(nodes []*relNode) bool {
 	return false
 }
 
+func (e *RelExplorer) clickRow(innerY int) {
+	row := e.offset + innerY
+	vis := e.visibleNodes()
+	if row < 0 || row >= len(vis) {
+		return
+	}
+	e.cursor = row
+	e.ensureVisible()
+}
+
 func (e *RelExplorer) ensureVisible() {
 	h := max(1, e.height)
 	vis := e.visibleNodes()

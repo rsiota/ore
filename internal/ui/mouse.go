@@ -3,7 +3,7 @@ package ui
 import tea "github.com/charmbracelet/bubbletea"
 
 // handleMouse routes mouse events. Overlays own the screen; otherwise a
-// left-click in the main grid selects that cell (creel results-panel style).
+// left-click selects a cell in the main grid or a line in the right pane.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.help.Visible() || m.palette.IsVisible() || m.branches.IsVisible() || m.bookmarks.IsVisible() {
 		return m, nil
@@ -13,6 +13,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	if !isMouseLeftClick(msg) {
 		return m, nil
+	}
+	if next, cmd, ok := m.handleRightPaneClick(msg.X, msg.Y); ok {
+		return next, cmd
 	}
 	return m.handleMainGridClick(msg.X, msg.Y)
 }
@@ -70,6 +73,92 @@ func (m Model) handleMainGridClick(x, y int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, m.applyMainCell(row, col)
+}
+
+func (m Model) handleRightPaneClick(x, y int) (tea.Model, tea.Cmd, bool) {
+	px, py, pw, ph, ok := m.rightPaneGeom()
+	if !ok {
+		return m, nil, false
+	}
+	if x < px || x >= px+pw || y < py || y >= py+ph {
+		return m, nil, false
+	}
+
+	innerX := x - px - 1
+	innerY := y - py - 1
+	innerW := max(1, pw-borderOverhead)
+	innerH := max(1, ph-borderOverhead)
+	if innerX < 0 || innerY < 0 || innerX >= innerW || innerY >= innerH {
+		return m.focusRightPane(), nil, true
+	}
+	if m.explorer.Opened() {
+		return m.applyExplorerClick(innerY), nil, true
+	}
+	return m.applyDetailClick(innerX, innerY), nil, true
+}
+
+func (m Model) rightPaneGeom() (x, y, w, h int, ok bool) {
+	if m.width < 80 || m.height < 2 {
+		return 0, 0, 0, 0, false
+	}
+	x = m.mainPaneWidth()
+	return x, 0, m.width - x, m.panesHeight(), true
+}
+
+func (m Model) focusRightPane() Model {
+	if m.explorer.Opened() {
+		if m.focus == FocusDetail {
+			m.leaveDetailYank()
+		}
+		if m.focus == FocusBlameYank {
+			m.leaveBlameYank()
+		}
+		m.focus = FocusExplorer
+		m.status = "relationships"
+		return m
+	}
+	if m.focus != FocusDetail {
+		m.enterDetailYank()
+	}
+	return m
+}
+
+func (m Model) applyExplorerClick(innerY int) Model {
+	if m.focus == FocusDetail {
+		m.leaveDetailYank()
+	}
+	if m.focus == FocusBlameYank {
+		m.leaveBlameYank()
+	}
+	m.layoutExplorer()
+	m.focus = FocusExplorer
+	m.explorer.clickRow(innerY)
+	m.status = "relationships"
+	return m
+}
+
+func (m Model) applyDetailClick(innerX, innerY int) Model {
+	if m.focus == FocusBlameYank {
+		m.leaveBlameYank()
+	}
+	lines := m.detailYankLines()
+	row := m.detailOffset + innerY
+	if len(lines) == 0 || row < 0 || row >= len(lines) {
+		if m.focus != FocusDetail {
+			m.enterDetailYank()
+		}
+		return m
+	}
+	col := runeIndexAtDisplayCol(lines[row], innerX)
+	if m.focus != FocusDetail {
+		m.enterDetailYankAt(row, col)
+		return m
+	}
+	m.yank.searchTyping = false
+	m.yank.row, m.yank.col = clampYankPos(lines, row, col)
+	m.ensureYankVisible(m.detailViewHeight())
+	m.status = "detail · " + m.yank.modeLabel()
+	return m
 }
 
 func (m Model) leftPaneGeom() (x, y, w, h int, ok bool) {
