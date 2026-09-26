@@ -493,9 +493,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.logTotal = msg.total
 		window := m.commitsWindowText()
-		if m.logCapped() {
-			window += " · :more"
-		}
 		if prefer != "" {
 			m.restoreCommitCursor(prefer)
 			if m.logExtending {
@@ -586,10 +583,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.restoreAfterHistory && m.pendingRestore != nil {
 			return m, m.finishRestoreHistory()
 		}
-		m.status = fmt.Sprintf("history · %s · %d commits%s · b/enter blame", m.historyPath, len(m.history), cappedSuffix(len(m.history), m.effectiveHistoryLimit()))
-		if m.historyCapped() {
-			m.status += " · :more"
-		}
+		m.status = fmt.Sprintf("history · %s · %d commits%s", m.historyPath, len(m.history), cappedSuffix(len(m.history), m.effectiveHistoryLimit()))
 		if len(m.history) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -634,7 +628,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.main = MainBlame
 		m.focus = FocusMain
 		m.chordG = false
-		m.status = fmt.Sprintf("blame · %s @ %s · %d lines · f follow · F evolve · l fold · <> code · esc back",
+		m.status = fmt.Sprintf("blame · %s @ %s · %d lines",
 			m.blamePath, shortHash(m.blameRev), len(m.blame))
 		if bl, ok := m.selectedBlameLine(); ok && bl.PreviousPath != "" && bl.PreviousPath != m.blamePath {
 			m.status += " · was " + bl.PreviousPath
@@ -673,7 +667,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.main = MainLineEvo
 		m.focus = FocusMain
 		m.chordG = false
-		m.status = fmt.Sprintf("evolve · %s · %d steps%s · enter blame · esc back",
+		m.status = fmt.Sprintf("evolve · %s · %d steps%s",
 			m.evoOriginPath, len(m.evo), cappedSuffix(len(m.evo), git.DefaultEvolutionLimit))
 		if m.restoreAfterEvo {
 			m.finishRestoreEvolve()
@@ -713,13 +707,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.main = MainPickaxe
 		m.focus = FocusMain
 		m.chordG = false
-		m.status = fmt.Sprintf("pickaxe · %s %q · %d hits%s · enter files · b blame · esc back",
+		m.status = fmt.Sprintf("pickaxe · %s %q · %d hits%s",
 			pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe), cappedSuffix(len(m.pickaxe), m.effectiveHitLimit()))
-		if m.hitsCapped() {
-			m.status += " · :more"
-		}
 		if m.pickHlOn {
-			m.status += " · hl on"
+			m.status += " · hl"
 		}
 		if m.restoreAfterPick {
 			m.finishRestorePick()
@@ -763,11 +754,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.main = MainPickaxe
 		m.focus = FocusMain
 		m.chordG = false
-		m.status = fmt.Sprintf("couple · %s · %d commits%s · enter · b blame · esc back",
+		m.status = fmt.Sprintf("couple · %s · %d commits%s",
 			truncateQuery(msg.label, 40), len(m.pickaxe), cappedSuffix(len(m.pickaxe), m.effectiveHitLimit()))
-		if m.hitsCapped() {
-			m.status += " · :more"
-		}
 		if m.restoreAfterPick {
 			m.finishRestorePick()
 		}
@@ -814,11 +802,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.main = MainPickaxe
 		m.focus = FocusMain
 		m.chordG = false
-		m.status = fmt.Sprintf("authors · %s · %d commits%s · enter · b blame · esc back",
+		m.status = fmt.Sprintf("authors · %s · %d commits%s",
 			truncateQuery(msg.label, 40), len(m.pickaxe), cappedSuffix(len(m.pickaxe), m.effectiveHitLimit()))
-		if m.hitsCapped() {
-			m.status += " · :more"
-		}
 		if m.restoreAfterPick {
 			m.finishRestorePick()
 		}
@@ -844,7 +829,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.layoutExplorer()
 		m.focus = FocusExplorer
-		m.status = "relationships · l expand · enter open · h collapse · esc close"
+		m.status = "relationships"
 		return m, nil
 
 	case relExpandRequestMsg:
@@ -856,7 +841,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.status = "expand failed"
 		} else {
-			m.status = "relationships · l expand · enter open · h collapse · esc close"
+			m.status = "relationships"
 		}
 		return m, nil
 
@@ -867,7 +852,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.branches.Open(msg.refs, m.viewRev)
-		m.status = "branch · enter view · esc cancel"
+		m.status = "branch"
 		return m, nil
 
 	case branchPickedMsg:
@@ -1186,7 +1171,7 @@ func (m Model) cycleFocus() (tea.Model, tea.Cmd) {
 			if len(m.hunks) == 0 {
 				m.status = "hunks · none in this detail"
 			} else {
-				m.status = fmtHunkStatus(m.hunkCursor, len(m.hunks), m.hunks[m.hunkCursor]) + " · tab detail · esc main"
+				m.status = fmtHunkStatus(m.hunkCursor, len(m.hunks), m.hunks[m.hunkCursor])
 			}
 			return m, nil
 		}
@@ -1400,9 +1385,6 @@ func (m *Model) refreshStatus() {
 			m.status = fmt.Sprintf("%d commits", len(m.commitIndices()))
 		} else {
 			m.status = m.commitsWindowText()
-			if m.logCapped() {
-				m.status += " · :more"
-			}
 		}
 		if m.commitSortDir != SortNone && m.commitSortCol >= 0 && m.commitSortCol < len(commitColumns) {
 			m.status += fmt.Sprintf(" · sort %s%s", commitColumns[m.commitSortCol], m.commitSortDir.Arrow())
@@ -1428,9 +1410,6 @@ func (m *Model) refreshStatus() {
 		}
 	case MainHistory:
 		m.status = fmt.Sprintf("history · %s · %d commits%s", m.historyPath, len(m.historyIndices()), cappedSuffix(len(m.history), m.effectiveHistoryLimit()))
-		if m.filter == "" && m.historyCapped() {
-			m.status += " · :more"
-		}
 		if pc, ok := m.selectedHistory(); ok {
 			if edge := pc.EdgeLabel(); edge != "" {
 				m.status += " · " + edge
@@ -1519,7 +1498,7 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		m.focus = FocusMain
 		if m.blameFrom == MainLineEvo && len(m.evo) > 0 {
 			m.main = MainLineEvo
-			m.status = fmt.Sprintf("evolve · %s · %d steps%s · enter blame · esc back", m.evoOriginPath, len(m.evo), cappedSuffix(len(m.evo), git.DefaultEvolutionLimit))
+			m.status = fmt.Sprintf("evolve · %s · %d steps%s", m.evoOriginPath, len(m.evo), cappedSuffix(len(m.evo), git.DefaultEvolutionLimit))
 			return m, m.reloadDetail()
 		}
 		if m.blameFrom == MainPickaxe && m.pickQuery != "" {
@@ -1606,10 +1585,7 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key == "g" {
 		m.chordG = true
-		m.status = "g · g top · b branch · m bookmarks · p/c/u dag · r relations"
-		if m.main == MainBlame {
-			m.status = "g · g top · b branch · m bookmarks · p/c/u dag · r relations · f follow"
-		}
+		m.status = "g…"
 		return m, nil
 	}
 
@@ -1805,7 +1781,7 @@ func (m *Model) enterFilesViewFrom(d git.CommitDetail) {
 	m.fileSortCol = -1
 	m.fileSortDir = SortNone
 	m.focus = FocusMain
-	m.status = fmt.Sprintf("%d files in %s · enter history · b blame · esc back", len(m.files), d.Commit.ShortHash)
+	m.status = fmt.Sprintf("%d files in %s", len(m.files), d.Commit.ShortHash)
 }
 
 func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -2437,7 +2413,7 @@ func (m Model) blamePickaxeHit() (tea.Model, tea.Cmd) {
 		path = h.Paths[0]
 	}
 	if path == "" {
-		m.status = "no path on this hit — enter files first"
+		m.status = "no path on this hit"
 		return m, nil
 	}
 	m.pickaxeDive = true

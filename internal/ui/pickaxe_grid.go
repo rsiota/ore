@@ -143,19 +143,15 @@ func (m Model) hitListShortStatus() string {
 	label := truncateQuery(m.pickQuery, 32)
 	n := len(m.pickaxe)
 	limit := m.effectiveHitLimit()
-	more := ""
-	if m.hitsCapped() {
-		more = " · :more"
-	}
 	if m.pickKind == hitListCouple {
-		return fmt.Sprintf("couple · %s · %d commits%s%s", label, n, cappedSuffix(n, limit), more)
+		return fmt.Sprintf("couple · %s · %d commits%s", label, n, cappedSuffix(n, limit))
 	}
 	if m.pickKind == hitListAuthors {
-		return fmt.Sprintf("authors · %s · %d commits%s%s", label, n, cappedSuffix(n, limit), more)
+		return fmt.Sprintf("authors · %s · %d commits%s", label, n, cappedSuffix(n, limit))
 	}
-	s := fmt.Sprintf("pickaxe · %s %q · %d hits%s%s", pickaxeModeLabel(m.pickMode), label, n, cappedSuffix(n, limit), more)
+	s := fmt.Sprintf("pickaxe · %s %q · %d hits%s", pickaxeModeLabel(m.pickMode), label, n, cappedSuffix(n, limit))
 	if m.pickHlOn {
-		s += " · hl · :nohl"
+		s += " · hl"
 	}
 	return s
 }

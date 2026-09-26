@@ -93,7 +93,7 @@ func (m *Model) clearPickaxeHighlight() {
 	}
 	m.pickHlOn = false
 	m.invalidateDetailCache()
-	m.status = "pickaxe highlight off · :pickaxe to search again"
+	m.status = "pickaxe highlight off"
 }
 
 func (m *Model) enablePickaxeHighlight() {

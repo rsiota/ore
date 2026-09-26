@@ -30,7 +30,7 @@ func (m *Model) enterDetailYank() {
 	}
 	m.yank.row, m.yank.col = clampYankPos(lines, row, 0)
 	m.focus = FocusDetail
-	m.status = "detail · " + m.yank.modeLabel() + " · esc leave · y yank"
+	m.status = "detail · " + m.yank.modeLabel()
 }
 
 func (m *Model) leaveDetailYank() {

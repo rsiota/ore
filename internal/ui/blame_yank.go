@@ -32,7 +32,7 @@ func (m *Model) enterBlameYank() {
 	m.blameCol = blameColCode
 	m.focus = FocusBlameYank
 	m.ensureBlameYankVisible(max(1, m.mainListHeight()))
-	m.status = "blame · " + m.yank.modeLabel() + " · esc leave · y yank · tab detail"
+	m.status = "blame · " + m.yank.modeLabel()
 }
 
 func (m *Model) leaveBlameYank() {

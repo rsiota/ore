@@ -63,7 +63,7 @@ func registry() []Section {
 				{"o", []string{"o"}, "cycle sort on current column (asc→desc→off)", "o"},
 				{"/", []string{"/"}, "filter current column", "/"},
 				{"enter", []string{"enter"}, "open files for commit", "enter"},
-				{"+", []string{"+"}, "load older commits when the log is capped", ""},
+				{"+", []string{"+"}, "load older commits when the log is capped", "+"},
 			},
 		},
 		{
@@ -219,13 +219,13 @@ func statusHintList(main MainView, explorerOpen bool) []string {
 	case MainFiles:
 		return append([]string{"j/k"}, append(hintsForSection("Files grid"), "gb", "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainHistory:
-		return append([]string{"j/k"}, append(hintsForSection("History grid"), "gb", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("History grid"), "+", "gb", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainBlame:
 		return append([]string{"j/k"}, append(hintsForSection("Blame"), "gb", "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainLineEvo:
 		return append([]string{"j/k"}, append(hintsForSection("Line evolution"), "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	case MainPickaxe:
-		return append([]string{"j/k"}, append(hintsForSection("Pickaxe"), "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Pickaxe"), "+", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
 	default:
 		return []string{"j/k", "enter", "tab", "D", "w", "ctrl+p", "?", "esc", "q"}
 	}
