@@ -53,6 +53,10 @@ func pickRow(h git.PickaxeHit) []string {
 }
 
 func (m Model) renderPickaxePane(width, height int) string {
+	return m.pickaxeGrid(width, height).View()
+}
+
+func (m Model) pickaxeGrid(width, height int) Grid {
 	rows := make([][]string, len(m.pickaxe))
 	for i, h := range m.pickaxe {
 		rows[i] = pickRow(h)
@@ -72,7 +76,7 @@ func (m Model) renderPickaxePane(width, height int) string {
 	}
 	g.AutoWidthsCaps(pickMetaMaxContent)
 	g.ClampCursor()
-	return g.View()
+	return g
 }
 
 func (m *Model) ensurePickVisible() {

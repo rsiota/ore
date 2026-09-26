@@ -75,6 +75,51 @@ func TestCycleSort(t *testing.T) {
 	}
 }
 
+func TestGridColumnAtX(t *testing.T) {
+	g := Grid{
+		Columns: []string{"hash", "date", "subject"},
+		Rows:    [][]string{{"abc", "today", "msg"}},
+		Width:   40,
+		Height:  6,
+	}
+	g.AutoWidths()
+	if col := g.ColumnAtX(0); col != 0 {
+		t.Fatalf("x=0 → col %d, want 0", col)
+	}
+	x1 := g.Widths[0] + 1 // past first cell and its trailing │
+	if col := g.ColumnAtX(x1); col != 1 {
+		t.Fatalf("x=%d (start of col 1) → %d", x1, col)
+	}
+	x2 := g.Widths[0] + 1 + g.Widths[1] + 1
+	if col := g.ColumnAtX(x2); col != 2 {
+		t.Fatalf("x=%d (start of col 2) → %d", x2, col)
+	}
+	if col := g.ColumnAtX(-1); col != -1 {
+		t.Fatalf("x=-1 → %d, want -1", col)
+	}
+	if col := g.ColumnAtX(g.Width + 20); col != -1 {
+		t.Fatalf("past row → %d, want -1", col)
+	}
+}
+
+func TestGridColumnAtXSkipsHidden(t *testing.T) {
+	g := Grid{
+		Columns:    []string{"a", "b", "c"},
+		Rows:       [][]string{{"1", "2", "3"}},
+		HiddenCols: []int{1},
+		Width:      40,
+		Height:     6,
+	}
+	g.AutoWidths()
+	if col := g.ColumnAtX(0); col != 0 {
+		t.Fatalf("first visible → %d, want 0", col)
+	}
+	x := g.Widths[0] + 1
+	if col := g.ColumnAtX(x); col != 2 {
+		t.Fatalf("second visible → %d, want 2 (hidden b)", col)
+	}
+}
+
 func TestGridClampAndMove(t *testing.T) {
 	g := Grid{
 		Columns: []string{"A", "B"},

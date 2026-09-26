@@ -538,6 +538,36 @@ func (g Grid) widthAt(i int) int {
 	return 8 + 2*cellPad
 }
 
+// ColumnAtX maps a content-relative X (0 = first cell, inside the pane border)
+// to a visible column index, or -1 if x is outside the row.
+func (g Grid) ColumnAtX(x int) int {
+	if x < 0 {
+		return -1
+	}
+	offset := 0
+	last := -1
+	for i := 0; i < g.NumCols(); i++ {
+		if g.colHidden(i) {
+			continue
+		}
+		last = i
+	}
+	for i := 0; i < g.NumCols(); i++ {
+		if g.colHidden(i) {
+			continue
+		}
+		end := offset + g.widthAt(i)
+		if i != last {
+			end++ // trailing │ belongs to this column (creel-style)
+		}
+		if x < end {
+			return i
+		}
+		offset = end
+	}
+	return -1
+}
+
 func joinCols(parts []string, sep string) string {
 	return strings.Join(parts, sep)
 }

@@ -469,6 +469,9 @@ func (m Model) Init() tea.Cmd {
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -3124,6 +3127,10 @@ func renderStatusTab(title string, focused bool) string {
 }
 
 func (m Model) renderCommitPane(width, height int) string {
+	return m.commitGrid(width, height).View()
+}
+
+func (m Model) commitGrid(width, height int) Grid {
 	idx := m.commitIndices()
 	graphs := commitGraphLines(m.commits, idx, m.commitSortDir)
 	rows := make([][]string, len(idx))
@@ -3148,10 +3155,14 @@ func (m Model) renderCommitPane(width, height int) string {
 	}
 	g.AutoWidths()
 	g.ClampCursor()
-	return g.View()
+	return g
 }
 
 func (m Model) renderFilesPane(width, height int) string {
+	return m.filesGrid(width, height).View()
+}
+
+func (m Model) filesGrid(width, height int) Grid {
 	idx := m.fileIndices()
 	rows := make([][]string, len(idx))
 	for i, src := range idx {
@@ -3172,10 +3183,14 @@ func (m Model) renderFilesPane(width, height int) string {
 	}
 	g.AutoWidths()
 	g.ClampCursor()
-	return g.View()
+	return g
 }
 
 func (m Model) renderHistoryPane(width, height int) string {
+	return m.historyGrid(width, height).View()
+}
+
+func (m Model) historyGrid(width, height int) Grid {
 	idx := m.historyIndices()
 	graphs := histGraphLines(m.history, idx, m.historySortDir)
 	rows := make([][]string, len(idx))
@@ -3201,10 +3216,14 @@ func (m Model) renderHistoryPane(width, height int) string {
 	}
 	g.AutoWidths()
 	g.ClampCursor()
-	return g.View()
+	return g
 }
 
 func (m Model) renderBlamePane(width, height int) string {
+	return m.blameGrid(width, height).View()
+}
+
+func (m Model) blameGrid(width, height int) Grid {
 	idx := m.blameIndices()
 	rows := make([][]string, len(idx))
 	for i := range idx {
@@ -3297,7 +3316,7 @@ func (m Model) renderBlamePane(width, height int) string {
 	}
 	g.AutoWidthsCaps(blameMetaMaxContent)
 	g.ClampCursor()
-	return g.View()
+	return g
 }
 
 func padPane(lines []string, width, height int) string {
@@ -3757,7 +3776,7 @@ func filepathBase(p string) string {
 
 // Run starts the Bubble Tea program.
 func Run(repo *git.Repo) error {
-	p := tea.NewProgram(New(repo), tea.WithAltScreen())
+	p := tea.NewProgram(New(repo), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }

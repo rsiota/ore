@@ -60,26 +60,30 @@ func evoRow(s git.LineEvolutionStep) []string {
 }
 
 func (m Model) renderEvolutionPane(width, height int) string {
+	return m.evoGrid(width, height).View()
+}
+
+func (m Model) evoGrid(width, height int) Grid {
 	rows := make([][]string, len(m.evo))
 	for i, s := range m.evo {
 		rows[i] = evoRow(s)
 	}
 	g := Grid{
-		Columns:    evoColumns,
-		Rows:       rows,
-		CursorRow:  m.evoCursor,
-		CursorCol:  m.evoCol,
-		OffsetRow:  m.evoOffset,
-		Width:      width,
-		Height:     height,
-		Focused:    m.focus == FocusMain,
-		SoftCursor: true,
-		MuteCols:   []int{evoColStep, evoColPath},
+		Columns:        evoColumns,
+		Rows:           rows,
+		CursorRow:      m.evoCursor,
+		CursorCol:      m.evoCol,
+		OffsetRow:      m.evoOffset,
+		Width:          width,
+		Height:         height,
+		Focused:        m.focus == FocusMain,
+		SoftCursor:     true,
+		MuteCols:       []int{evoColStep, evoColPath},
 		RightAlignCols: []int{evoColStep, evoColLine},
 	}
 	g.AutoWidthsCaps(evoMetaMaxContent)
 	g.ClampCursor()
-	return g.View()
+	return g
 }
 
 func (m *Model) ensureEvoVisible() {
