@@ -46,6 +46,9 @@ var (
 	colorPrimary         lipgloss.Color
 	colorFg              lipgloss.Color
 	colorMuted           lipgloss.Color
+	colorLabel           lipgloss.Color
+	colorAccent          lipgloss.Color
+	colorSearchMatch     lipgloss.Color
 	colorBorderFocused   lipgloss.Color
 	colorBorderUnfocused lipgloss.Color
 	colorBorder          lipgloss.Color
@@ -98,6 +101,9 @@ func applyPalette(p colorPalette) {
 	colorPrimary = p.primary
 	colorFg = p.fg
 	colorMuted = p.muted
+	colorLabel = p.label
+	colorAccent = p.hash
+	colorSearchMatch = p.searchStrong
 	colorBorderFocused = p.borderFocused
 	colorBorderUnfocused = p.borderUnfocused
 	colorBorder = p.border

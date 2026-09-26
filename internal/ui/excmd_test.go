@@ -66,11 +66,22 @@ func TestExGotoAmbiguous(t *testing.T) {
 }
 
 func TestExCommandsListedInHelp(t *testing.T) {
-	h := HelpPanel{visible: true, width: 80, height: 40}
-	rows := strings.Join(h.rows(), "\n")
-	for _, want := range []string{":blame", ":history", ":goto", ":authors", ":branch", ":theme", ":set", ":session", ":refresh", ":more", "Commands"} {
-		if !strings.Contains(rows, want) {
+	h := NewHelpPanel()
+	h.Show()
+	h.page = helpPageCommands
+	h.SetSize(80, 40)
+	var rows strings.Builder
+	for _, row := range renderCommandsRows(80) {
+		rows.WriteString(row.searchText())
+		rows.WriteByte('\n')
+	}
+	body := rows.String()
+	for _, want := range []string{":blame", ":history", ":goto", ":authors", ":branch", ":theme", ":set", ":session", ":refresh", ":more"} {
+		if !strings.Contains(body, want) {
 			t.Fatalf("help missing %q", want)
 		}
+	}
+	if !strings.Contains(stripAnsi(h.View()), "Commands") {
+		t.Fatal("help missing Commands tab")
 	}
 }

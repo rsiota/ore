@@ -892,7 +892,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = "command palette"
 			return m, nil
 		}
-		m.help.Update(msg)
+		if !m.help.HandleKey(msg) {
+			m.help.Hide()
+		}
 		return m, nil
 	}
 

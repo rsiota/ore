@@ -107,9 +107,16 @@ func TestExTheme(t *testing.T) {
 }
 
 func TestThemeListedInHelp(t *testing.T) {
-	h := HelpPanel{visible: true, width: 80, height: 40}
-	rows := strings.Join(h.rows(), "\n")
-	if !strings.Contains(rows, ":theme") {
+	h := NewHelpPanel()
+	h.Show()
+	h.page = helpPageCommands
+	h.SetSize(80, 40)
+	var rows strings.Builder
+	for _, row := range renderCommandsRows(80) {
+		rows.WriteString(row.searchText())
+		rows.WriteByte('\n')
+	}
+	if !strings.Contains(rows.String(), ":theme") {
 		t.Fatal("help missing :theme")
 	}
 }
