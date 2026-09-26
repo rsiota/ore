@@ -158,7 +158,7 @@ func registry() []Section {
 				{":couple", []string{":"}, "commits where two paths co-occur", ""},
 				{":authors", []string{":"}, "commits by an author on these paths", ""},
 				{":nohl", []string{":"}, "clear pickaxe match washes", ""},
-				{":more", []string{":"}, "load older commits (capped log window)", ""},
+				{":more", []string{":"}, "load older commits / history / pickaxe hits", ""},
 				{"j/k", []string{"j", "k"}, "move in pickaxe/couple/authors results", "j/k"},
 				{"enter", []string{"enter"}, "open path history (or files)", "enter"},
 				{"b", []string{"b"}, "blame hit path at commit", "b"},

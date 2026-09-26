@@ -103,11 +103,9 @@ func (m *Model) exHistory(args []string) tea.Cmd {
 	path := args[0]
 	m.filter = ""
 	m.filterTyping = false
-	m.historyPath = path
-	m.loadingHistory = true
 	m.focus = FocusMain
 	m.status = fmt.Sprintf("loading history · %s", path)
-	return loadHistoryCmd(m.repo, path)
+	return m.requestHistory(path)
 }
 
 func (m *Model) exEvolve() tea.Cmd {

@@ -162,3 +162,132 @@ func TestPickaxeTitleCapped(t *testing.T) {
 		t.Fatalf("title = %q", m.mainTitle())
 	}
 }
+
+func TestLoadMoreHistoryExtends(t *testing.T) {
+	hash := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	m := Model{
+		repo:        &git.Repo{Path: "/tmp/demo"},
+		main:        MainHistory,
+		historyPath: "a.go",
+		history:     make([]git.PathCommit, git.DefaultLogLimit),
+		historyLimit: git.DefaultLogLimit,
+	}
+	m.history[0].Hash = hash
+	m.historyCursor = 0
+	cmd := m.loadMoreHistory(0)
+	if cmd == nil {
+		t.Fatal("expected load cmd")
+	}
+	if m.historyLimit != git.DefaultLogLimit*2 {
+		t.Fatalf("limit = %d", m.historyLimit)
+	}
+	if !m.historyExtending || !m.loadingHistory {
+		t.Fatalf("extending=%v loading=%v", m.historyExtending, m.loadingHistory)
+	}
+	if m.historyPreferHash != hash {
+		t.Fatalf("prefer = %q", m.historyPreferHash)
+	}
+}
+
+func TestLoadMoreHistoryNoopsWhenComplete(t *testing.T) {
+	m := Model{
+		repo:         &git.Repo{Path: "/tmp/demo"},
+		main:         MainHistory,
+		historyPath:  "a.go",
+		history:      []git.PathCommit{{Commit: git.Commit{Hash: "aaa"}}},
+		historyLimit: git.DefaultLogLimit,
+	}
+	if m.loadMoreHistory(0) != nil {
+		t.Fatal("expected nil when under cap")
+	}
+	m.exMore(nil)
+	if m.status != "already showing all history" {
+		t.Fatalf("status = %q", m.status)
+	}
+}
+
+func TestLoadMoreHitsExtends(t *testing.T) {
+	hash := "cccccccccccccccccccccccccccccccccccccccc"
+	m := Model{
+		repo:      &git.Repo{Path: "/tmp/demo"},
+		main:      MainPickaxe,
+		pickKind:  hitListPickaxe,
+		pickQuery: "token",
+		pickaxe:   make([]git.PickaxeHit, git.DefaultPickaxeLimit),
+		pickLimit: git.DefaultPickaxeLimit,
+	}
+	m.pickaxe[0].Commit.Hash = hash
+	cmd := m.loadMoreHits(0)
+	if cmd == nil {
+		t.Fatal("expected load cmd")
+	}
+	if m.pickLimit != git.DefaultPickaxeLimit*2 {
+		t.Fatalf("limit = %d", m.pickLimit)
+	}
+	if !m.pickExtending || !m.loadingPick {
+		t.Fatalf("extending=%v loading=%v", m.pickExtending, m.loadingPick)
+	}
+	if m.pickPreferHash != hash {
+		t.Fatalf("prefer = %q", m.pickPreferHash)
+	}
+}
+
+func TestExMoreDispatchesPickaxe(t *testing.T) {
+	m := Model{
+		repo:     &git.Repo{Path: "/tmp/demo"},
+		main:     MainPickaxe,
+		pickKind: hitListPickaxe,
+		pickaxe:  []git.PickaxeHit{{Commit: git.Commit{Hash: "aaa"}}},
+	}
+	m.exMore(nil)
+	if m.status != "already showing all hits" {
+		t.Fatalf("status = %q", m.status)
+	}
+}
+
+func TestHistoryLoadedKeepsCursorWhenExtending(t *testing.T) {
+	keep := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	m := Model{
+		main:              MainHistory,
+		historyPath:       "a.go",
+		historyExtending:  true,
+		historyPreferHash: keep,
+		historyCursor:     0,
+		history: []git.PathCommit{
+			{Commit: git.Commit{Hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
+		},
+	}
+	next, _ := m.Update(historyLoadedMsg{
+		path: "a.go",
+		commits: []git.PathCommit{
+			{Commit: git.Commit{Hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
+			{Commit: git.Commit{Hash: keep}},
+		},
+		limit: 1000,
+	})
+	mm := next.(Model)
+	if mm.historyLimit != 1000 {
+		t.Fatalf("limit = %d", mm.historyLimit)
+	}
+	if mm.historyExtending {
+		t.Fatal("extending should clear")
+	}
+	if got := mm.selectedHistoryHash(); got != keep {
+		t.Fatalf("cursor hash = %q want %q (cursor=%d)", got, keep, mm.historyCursor)
+	}
+}
+
+func TestHistoryTitleUsesLimit(t *testing.T) {
+	m := Model{
+		main:         MainHistory,
+		history:      make([]git.PathCommit, 200),
+		historyLimit: 200,
+	}
+	if got := m.mainTitle(); got != "history · 200+" {
+		t.Fatalf("title = %q", got)
+	}
+	m.history = m.history[:50]
+	if got := m.mainTitle(); got != "history" {
+		t.Fatalf("under cap title = %q", got)
+	}
+}

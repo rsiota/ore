@@ -65,8 +65,11 @@ func TestSaveLoadPickaxeEvolveHunks(t *testing.T) {
 		CoupleSeeds: []string{"a.go"},
 		CoupleWith:  "b.go",
 		Author:      "alice",
-		Hunks:       true,
-		EvoStep:     2,
+		Hunks:        true,
+		EvoStep:      2,
+		LogLimit:     1500,
+		HistoryLimit: 1000,
+		HitLimit:     200,
 	}
 	if err := store.Save(repo, st); err != nil {
 		t.Fatal(err)
@@ -81,6 +84,9 @@ func TestSaveLoadPickaxeEvolveHunks(t *testing.T) {
 	}
 	if !loaded.Hunks || loaded.EvoStep != 2 || loaded.CoupleWith != "b.go" || loaded.Author != "alice" {
 		t.Fatalf("extra fields = %#v", loaded)
+	}
+	if loaded.LogLimit != 1500 || loaded.HistoryLimit != 1000 || loaded.HitLimit != 200 {
+		t.Fatalf("windows = %#v", loaded)
 	}
 }
 

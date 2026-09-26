@@ -142,13 +142,18 @@ func formatCoupleLabel(seeds []string, partner string) string {
 func (m Model) hitListShortStatus() string {
 	label := truncateQuery(m.pickQuery, 32)
 	n := len(m.pickaxe)
+	limit := m.effectiveHitLimit()
+	more := ""
+	if m.hitsCapped() {
+		more = " · :more"
+	}
 	if m.pickKind == hitListCouple {
-		return fmt.Sprintf("couple · %s · %d commits%s", label, n, cappedSuffix(n, git.CoChangeCommitCap))
+		return fmt.Sprintf("couple · %s · %d commits%s%s", label, n, cappedSuffix(n, limit), more)
 	}
 	if m.pickKind == hitListAuthors {
-		return fmt.Sprintf("authors · %s · %d commits%s", label, n, cappedSuffix(n, git.OwnershipCommitCap))
+		return fmt.Sprintf("authors · %s · %d commits%s%s", label, n, cappedSuffix(n, limit), more)
 	}
-	s := fmt.Sprintf("pickaxe · %s %q · %d hits%s", pickaxeModeLabel(m.pickMode), label, n, cappedSuffix(n, git.DefaultPickaxeLimit))
+	s := fmt.Sprintf("pickaxe · %s %q · %d hits%s%s", pickaxeModeLabel(m.pickMode), label, n, cappedSuffix(n, limit), more)
 	if m.pickHlOn {
 		s += " · hl · :nohl"
 	}

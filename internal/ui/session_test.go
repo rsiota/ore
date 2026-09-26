@@ -111,6 +111,36 @@ func TestExSessionClear(t *testing.T) {
 	}
 }
 
+func TestSnapshotSessionWindows(t *testing.T) {
+	m := Model{
+		main:         MainCommits,
+		logLimit:     1500,
+		historyLimit: 1000,
+		pickLimit:    250,
+		pickKind:     hitListPickaxe,
+	}
+	st := m.snapshotSession()
+	if st.LogLimit != 1500 || st.HistoryLimit != 1000 || st.HitLimit != 250 {
+		t.Fatalf("windows = %#v", st)
+	}
+
+	m.logLimit = git.DefaultLogLimit
+	m.historyLimit = git.DefaultLogLimit
+	m.pickLimit = git.DefaultPickaxeLimit
+	st = m.snapshotSession()
+	if st.LogLimit != 0 || st.HistoryLimit != 0 || st.HitLimit != 0 {
+		t.Fatalf("defaults should omit windows: %#v", st)
+	}
+}
+
+func TestApplySessionChromeWindows(t *testing.T) {
+	m := Model{}
+	m.applySessionChrome(session.State{LogLimit: 2000, HistoryLimit: 800, HitLimit: 180})
+	if m.logLimit != 2000 || m.historyLimit != 800 || m.pickLimit != 180 {
+		t.Fatalf("applied log=%d hist=%d hit=%d", m.logLimit, m.historyLimit, m.pickLimit)
+	}
+}
+
 func TestSnapshotSessionPickaxeAndHunks(t *testing.T) {
 	m := Model{
 		main:      MainPickaxe,

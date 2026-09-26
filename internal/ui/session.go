@@ -93,6 +93,15 @@ func (m Model) snapshotSession() session.State {
 	if m.hunkMode {
 		st.Hunks = true
 	}
+	if n := m.effectiveLogLimit(); n > git.DefaultLogLimit {
+		st.LogLimit = n
+	}
+	if n := m.effectiveHistoryLimit(); n > git.DefaultLogLimit {
+		st.HistoryLimit = n
+	}
+	if n := m.effectiveHitLimit(); n > m.defaultHitLimit() {
+		st.HitLimit = n
+	}
 	return st
 }
 
@@ -243,6 +252,15 @@ func (m *Model) applySessionChrome(st session.State) {
 	}
 	m.detailWrap = st.DetailWrap
 	m.hunkMode = st.Hunks
+	if st.LogLimit > 0 {
+		m.logLimit = st.LogLimit
+	}
+	if st.HistoryLimit > 0 {
+		m.historyLimit = st.HistoryLimit
+	}
+	if st.HitLimit > 0 {
+		m.pickLimit = st.HitLimit
+	}
 	if (strings.EqualFold(st.Main, "blame") || strings.EqualFold(st.Main, "evolve")) &&
 		st.BlameGutterFold >= 0 && st.BlameGutterFold <= blameGutterFoldMax {
 		m.blameGutterFold = st.BlameGutterFold
@@ -272,12 +290,7 @@ func (m *Model) continueSessionRestore() tea.Cmd {
 			return m.reloadDetail()
 		}
 		m.restoreAfterHistory = true
-		m.historyPath = st.Path
-		m.historyCol = histColHash
-		m.historySortCol = -1
-		m.historySortDir = SortNone
-		m.loadingHistory = true
-		return loadHistoryCmd(m.repo, st.Path)
+		return m.requestHistory(st.Path)
 	case "blame", "evolve":
 		if st.Path == "" {
 			m.clearSessionRestore()
@@ -285,12 +298,7 @@ func (m *Model) continueSessionRestore() tea.Cmd {
 		}
 		if strings.EqualFold(st.BlameFrom, "history") {
 			m.restoreAfterHistory = true
-			m.historyPath = st.Path
-			m.historyCol = histColHash
-			m.historySortCol = -1
-			m.historySortDir = SortNone
-			m.loadingHistory = true
-			return loadHistoryCmd(m.repo, st.Path)
+			return m.requestHistory(st.Path)
 		}
 		// files → blame stack (evolve continues after blame loads)
 		m.restoreAfterFiles = true

@@ -179,6 +179,14 @@ type Model struct {
 	logTotal     int  // rev-list --count for the viewed tip; 0 = unknown
 	logExtending bool // true while :more / j-at-end is fetching older commits
 
+	historyLimit      int
+	historyExtending  bool
+	historyPreferHash string
+
+	pickLimit      int
+	pickExtending  bool
+	pickPreferHash string
+
 	theme         string // active palette name (light|dark)
 	transparentBg bool   // skip theme bg paint (terminal transparency)
 	config        *config.Config
@@ -252,6 +260,7 @@ type commitsLoadedMsg struct {
 type historyLoadedMsg struct {
 	path    string
 	commits []git.PathCommit
+	limit   int
 	err     error
 }
 
@@ -343,12 +352,15 @@ func loadBranchesCmd(repo *git.Repo) tea.Cmd {
 	}
 }
 
-func loadHistoryCmd(repo *git.Repo, path string) tea.Cmd {
+func loadHistoryCmd(repo *git.Repo, path string, limit int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		commits, err := repo.FileHistory(ctx, path, git.LogOptions{})
-		return historyLoadedMsg{path: path, commits: commits, err: err}
+		if limit <= 0 {
+			limit = git.DefaultLogLimit
+		}
+		commits, err := repo.FileHistory(ctx, path, git.LogOptions{MaxCount: limit})
+		return historyLoadedMsg{path: path, commits: commits, limit: limit, err: err}
 	}
 }
 
@@ -385,11 +397,11 @@ func loadPickaxeCmd(repo *git.Repo, opt git.PickaxeOptions) tea.Cmd {
 	}
 }
 
-func loadCoupleCmd(repo *git.Repo, seeds []string, partner string) tea.Cmd {
+func loadCoupleCmd(repo *git.Repo, seeds []string, partner string, limit int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		hits, err := repo.CoChangeCommits(ctx, seeds, partner, 0)
+		hits, err := repo.CoChangeCommits(ctx, seeds, partner, limit)
 		return coupleLoadedMsg{
 			seeds:   seeds,
 			partner: partner,
@@ -400,11 +412,11 @@ func loadCoupleCmd(repo *git.Repo, seeds []string, partner string) tea.Cmd {
 	}
 }
 
-func loadAuthorCmd(repo *git.Repo, author, rev string, paths []string) tea.Cmd {
+func loadAuthorCmd(repo *git.Repo, author, rev string, paths []string, limit int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		hits, err := repo.PathAuthorCommits(ctx, author, rev, paths, 0)
+		hits, err := repo.PathAuthorCommits(ctx, author, rev, paths, limit)
 		return authorLoadedMsg{
 			author: author,
 			paths:  paths,
@@ -547,22 +559,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.status = "error"
+			m.historyExtending = false
 			return m, nil
 		}
+		if msg.limit > 0 {
+			m.historyLimit = msg.limit
+		}
 		m.history = msg.commits
-		m.historyCursor = 0
-		m.historyOffset = 0
-		m.historyCol = histColHash
-		m.historySortCol = -1
-		m.historySortDir = SortNone
-		m.filter = ""
-		m.filterTyping = false
+		if m.historyExtending {
+			m.historyExtending = false
+			if m.historyPreferHash != "" {
+				m.selectHistoryCommit(m.historyPreferHash)
+				m.historyPreferHash = ""
+			}
+		} else {
+			m.historyCursor = 0
+			m.historyOffset = 0
+			m.historyCol = histColHash
+			m.historySortCol = -1
+			m.historySortDir = SortNone
+			m.filter = ""
+			m.filterTyping = false
+		}
 		m.main = MainHistory
 		m.focus = FocusMain
 		if m.restoreAfterHistory && m.pendingRestore != nil {
 			return m, m.finishRestoreHistory()
 		}
-		m.status = fmt.Sprintf("history · %s · %d commits%s · b/enter blame", m.historyPath, len(m.history), cappedSuffix(len(m.history), git.DefaultLogLimit))
+		m.status = fmt.Sprintf("history · %s · %d commits%s · b/enter blame", m.historyPath, len(m.history), cappedSuffix(len(m.history), m.effectiveHistoryLimit()))
+		if m.historyCapped() {
+			m.status += " · :more"
+		}
 		if len(m.history) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -666,19 +693,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.status = "error"
+			m.pickExtending = false
 			m.clearSessionRestore()
 			return m, nil
 		}
 		m.pickaxe = msg.hits
 		m.pickPath = msg.path
-		m.pickCursor = 0
-		m.pickOffset = 0
-		m.pickCol = pickColSubject
+		if m.pickExtending {
+			m.pickExtending = false
+			if m.pickPreferHash != "" {
+				m.selectPickaxeCommit(m.pickPreferHash)
+				m.pickPreferHash = ""
+			}
+		} else {
+			m.pickCursor = 0
+			m.pickOffset = 0
+			m.pickCol = pickColSubject
+		}
 		m.main = MainPickaxe
 		m.focus = FocusMain
 		m.chordG = false
 		m.status = fmt.Sprintf("pickaxe · %s %q · %d hits%s · enter files · b blame · esc back",
-			pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe), cappedSuffix(len(m.pickaxe), git.DefaultPickaxeLimit))
+			pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe), cappedSuffix(len(m.pickaxe), m.effectiveHitLimit()))
+		if m.hitsCapped() {
+			m.status += " · :more"
+		}
 		if m.pickHlOn {
 			m.status += " · hl on"
 		}
@@ -700,6 +739,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.status = "error"
+			m.pickExtending = false
 			m.clearSessionRestore()
 			return m, nil
 		}
@@ -708,15 +748,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.coupleSeeds = msg.seeds
 		m.couplePartner = msg.partner
 		m.pickPath = msg.partner
-		m.pickCursor = 0
-		m.pickOffset = 0
-		m.pickCol = pickColSubject
+		if m.pickExtending {
+			m.pickExtending = false
+			if m.pickPreferHash != "" {
+				m.selectPickaxeCommit(m.pickPreferHash)
+				m.pickPreferHash = ""
+			}
+		} else {
+			m.pickCursor = 0
+			m.pickOffset = 0
+			m.pickCol = pickColSubject
+		}
 		m.pickHlOn = false
 		m.main = MainPickaxe
 		m.focus = FocusMain
 		m.chordG = false
 		m.status = fmt.Sprintf("couple · %s · %d commits%s · enter · b blame · esc back",
-			truncateQuery(msg.label, 40), len(m.pickaxe), cappedSuffix(len(m.pickaxe), git.CoChangeCommitCap))
+			truncateQuery(msg.label, 40), len(m.pickaxe), cappedSuffix(len(m.pickaxe), m.effectiveHitLimit()))
+		if m.hitsCapped() {
+			m.status += " · :more"
+		}
 		if m.restoreAfterPick {
 			m.finishRestorePick()
 		}
@@ -735,6 +786,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.status = "error"
+			m.pickExtending = false
 			m.clearSessionRestore()
 			return m, nil
 		}
@@ -747,15 +799,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(msg.paths) == 1 {
 			m.pickPath = msg.paths[0]
 		}
-		m.pickCursor = 0
-		m.pickOffset = 0
-		m.pickCol = pickColSubject
+		if m.pickExtending {
+			m.pickExtending = false
+			if m.pickPreferHash != "" {
+				m.selectPickaxeCommit(m.pickPreferHash)
+				m.pickPreferHash = ""
+			}
+		} else {
+			m.pickCursor = 0
+			m.pickOffset = 0
+			m.pickCol = pickColSubject
+		}
 		m.pickHlOn = false
 		m.main = MainPickaxe
 		m.focus = FocusMain
 		m.chordG = false
 		m.status = fmt.Sprintf("authors · %s · %d commits%s · enter · b blame · esc back",
-			truncateQuery(msg.label, 40), len(m.pickaxe), cappedSuffix(len(m.pickaxe), git.OwnershipCommitCap))
+			truncateQuery(msg.label, 40), len(m.pickaxe), cappedSuffix(len(m.pickaxe), m.effectiveHitLimit()))
+		if m.hitsCapped() {
+			m.status += " · :more"
+		}
 		if m.restoreAfterPick {
 			m.finishRestorePick()
 		}
@@ -1214,10 +1277,8 @@ func (m Model) activateRelation() (tea.Model, tea.Cmd) {
 		path := row.path
 		m.explorer.Close()
 		m.focus = FocusMain
-		m.historyPath = path
-		m.loadingHistory = true
 		m.status = fmt.Sprintf("loading history · %s", path)
-		return m, loadHistoryCmd(m.repo, path)
+		return m, m.requestHistory(path)
 	case relHotSpot:
 		m.explorer.Close()
 		m.focus = FocusMain
@@ -1366,7 +1427,10 @@ func (m *Model) refreshStatus() {
 			m.status += " · /" + col + m.filter
 		}
 	case MainHistory:
-		m.status = fmt.Sprintf("history · %s · %d commits%s", m.historyPath, len(m.historyIndices()), cappedSuffix(len(m.history), git.DefaultLogLimit))
+		m.status = fmt.Sprintf("history · %s · %d commits%s", m.historyPath, len(m.historyIndices()), cappedSuffix(len(m.history), m.effectiveHistoryLimit()))
+		if m.filter == "" && m.historyCapped() {
+			m.status += " · :more"
+		}
 		if pc, ok := m.selectedHistory(); ok {
 			if edge := pc.EdgeLabel(); edge != "" {
 				m.status += " · " + edge
@@ -1467,7 +1531,7 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		m.evo = nil
 		if m.blameFrom == MainHistory && m.historyPath != "" {
 			m.main = MainHistory
-			m.status = fmt.Sprintf("history · %s · %d commits%s", m.historyPath, len(m.history), cappedSuffix(len(m.history), git.DefaultLogLimit))
+			m.status = fmt.Sprintf("history · %s · %d commits%s", m.historyPath, len(m.history), cappedSuffix(len(m.history), m.effectiveHistoryLimit()))
 			return m, m.reloadDetail()
 		}
 		m.main = MainFiles
@@ -1815,13 +1879,11 @@ func (m Model) handleFileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.reloadDetail()
 	case "enter":
 		path := m.files[idx[m.fileCursor]].Path
-		m.historyPath = path
 		m.historyCol = histColHash
 		m.historySortCol = -1
 		m.historySortDir = SortNone
-		m.loadingHistory = true
 		m.status = fmt.Sprintf("loading history · %s", path)
-		return m, loadHistoryCmd(m.repo, path)
+		return m, m.requestHistory(path)
 	case "b":
 		return m, m.startBlame(m.files[idx[m.fileCursor]].Path, m.filesCommitHash, MainFiles)
 	}
@@ -1869,11 +1931,22 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.String() {
+	case "+":
+		if cmd := m.loadMoreHistory(0); cmd != nil {
+			return m, cmd
+		}
+		if !m.historyCapped() {
+			m.status = "already showing all history"
+		}
+		return m, nil
 	case "j", "down":
 		if m.historyCursor < n-1 {
 			m.historyCursor++
 			m.ensureHistoryVisible()
 			return m, m.reloadDetail()
+		}
+		if cmd := m.loadMoreHistory(0); cmd != nil {
+			return m, cmd
 		}
 	case "k", "up":
 		if m.historyCursor > 0 {
@@ -1890,6 +1963,11 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureHistoryVisible()
 		return m, m.reloadDetail()
 	case "ctrl+d":
+		if m.historyCursor >= n-1 {
+			if cmd := m.loadMoreHistory(0); cmd != nil {
+				return m, cmd
+			}
+		}
 		m.historyCursor = min(n-1, m.historyCursor+m.mainPage())
 		m.ensureHistoryVisible()
 		return m, m.reloadDetail()
@@ -2153,6 +2231,9 @@ func (m Model) startPickaxe(query string, mode git.PickaxeMode, path string) (te
 	m.pickMode = mode
 	m.pickPath = path
 	m.pickHlOn = true
+	if !m.restoreAfterPick && !m.pickExtending {
+		m.pickLimit = 0
+	}
 	m.loadingPick = true
 	m.err = ""
 	m.chordG = false
@@ -2161,10 +2242,11 @@ func (m Model) startPickaxe(query string, mode git.PickaxeMode, path string) (te
 	m.status = fmt.Sprintf("pickaxe · searching %s %q…", pickaxeModeLabel(mode), truncateQuery(query, 32))
 	rev := m.viewRev
 	return m, loadPickaxeCmd(m.repo, git.PickaxeOptions{
-		Query: query,
-		Mode:  mode,
-		Path:  path,
-		Rev:   rev,
+		Query:    query,
+		Mode:     mode,
+		Path:     path,
+		Rev:      rev,
+		MaxCount: m.effectiveHitLimit(),
 	})
 }
 
@@ -2193,13 +2275,16 @@ func (m Model) startCouple(seeds []string, partner string) (tea.Model, tea.Cmd) 
 	m.pickQuery = formatCoupleLabel(seeds, partner)
 	m.pickPath = partner
 	m.pickHlOn = false
+	if !m.restoreAfterPick && !m.pickExtending {
+		m.pickLimit = 0
+	}
 	m.loadingPick = true
 	m.err = ""
 	m.chordG = false
 	m.focus = FocusMain
 	m.invalidateDetailCache()
 	m.status = fmt.Sprintf("couple · searching %s…", truncateQuery(m.pickQuery, 40))
-	return m, loadCoupleCmd(m.repo, seeds, partner)
+	return m, loadCoupleCmd(m.repo, seeds, partner, m.effectiveHitLimit())
 }
 
 func (m Model) startAuthors(author string, paths []string, rev string) (tea.Model, tea.Cmd) {
@@ -2227,13 +2312,16 @@ func (m Model) startAuthors(author string, paths []string, rev string) (tea.Mode
 		m.pickPath = paths[0]
 	}
 	m.pickHlOn = false
+	if !m.restoreAfterPick && !m.pickExtending {
+		m.pickLimit = 0
+	}
 	m.loadingPick = true
 	m.err = ""
 	m.chordG = false
 	m.focus = FocusMain
 	m.invalidateDetailCache()
 	m.status = fmt.Sprintf("authors · searching %s…", truncateQuery(m.pickQuery, 40))
-	return m, loadAuthorCmd(m.repo, author, rev, paths)
+	return m, loadAuthorCmd(m.repo, author, rev, paths, m.effectiveHitLimit())
 }
 
 func (m Model) handlePickaxeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -2260,11 +2348,22 @@ func (m Model) handlePickaxeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.String() {
+	case "+":
+		if cmd := m.loadMoreHits(0); cmd != nil {
+			return m, cmd
+		}
+		if !m.hitsCapped() {
+			m.status = "already showing all hits"
+		}
+		return m, nil
 	case "j", "down":
 		if m.pickCursor < n-1 {
 			m.pickCursor++
 			m.ensurePickVisible()
 			return m, m.reloadDetail()
+		}
+		if cmd := m.loadMoreHits(0); cmd != nil {
+			return m, cmd
 		}
 	case "k", "up":
 		if m.pickCursor > 0 {
@@ -2281,6 +2380,11 @@ func (m Model) handlePickaxeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensurePickVisible()
 		return m, m.reloadDetail()
 	case "ctrl+d":
+		if m.pickCursor >= n-1 {
+			if cmd := m.loadMoreHits(0); cmd != nil {
+				return m, cmd
+			}
+		}
 		m.pickCursor = min(n-1, m.pickCursor+m.mainPage())
 		m.ensurePickVisible()
 		return m, m.reloadDetail()
@@ -2311,11 +2415,9 @@ func (m Model) activatePickaxeHit() (tea.Model, tea.Cmd) {
 	// Prefer diving into the hit's primary path history when we know it.
 	if len(h.Paths) == 1 {
 		path := h.Paths[0]
-		m.historyPath = path
-		m.loadingHistory = true
 		m.focus = FocusMain
 		m.status = fmt.Sprintf("loading history · %s", path)
-		return m, loadHistoryCmd(m.repo, path)
+		return m, m.requestHistory(path)
 	}
 	m.openFilesPending = true
 	m.status = "opening files…"
@@ -2495,7 +2597,7 @@ func (m *Model) afterRefreshCmds() tea.Cmd {
 	case MainHistory:
 		if m.historyPath != "" {
 			m.loadingHistory = true
-			cmds = append(cmds, loadHistoryCmd(m.repo, m.historyPath))
+			cmds = append(cmds, loadHistoryCmd(m.repo, m.historyPath, m.effectiveHistoryLimit()))
 		}
 	case MainBlame:
 		if m.blamePath != "" {
@@ -3005,7 +3107,7 @@ func (m Model) mainTitle() string {
 	case MainFiles:
 		return "files"
 	case MainHistory:
-		if len(m.history) >= git.DefaultLogLimit {
+		if m.historyCapped() {
 			return fmt.Sprintf("history · %d+", len(m.history))
 		}
 		return "history"
@@ -3017,13 +3119,13 @@ func (m Model) mainTitle() string {
 		}
 		return "evolve"
 	case MainPickaxe:
-		title, limit := "pickaxe", git.DefaultPickaxeLimit
+		title := "pickaxe"
 		if m.pickKind == hitListCouple {
-			title, limit = "couple", git.CoChangeCommitCap
+			title = "couple"
 		} else if m.pickKind == hitListAuthors {
-			title, limit = "authors", git.OwnershipCommitCap
+			title = "authors"
 		}
-		if len(m.pickaxe) >= limit {
+		if m.hitsCapped() {
 			return fmt.Sprintf("%s · %d+", title, len(m.pickaxe))
 		}
 		return title

@@ -54,6 +54,11 @@ type State struct {
 
 	// EvoStep is the selected row in the line evolution stack (Main == evolve).
 	EvoStep int `json:"evo_step,omitempty"`
+
+	// Window sizes after :more (0 = that view's default cap).
+	LogLimit     int `json:"log_limit,omitempty"`
+	HistoryLimit int `json:"history_limit,omitempty"`
+	HitLimit     int `json:"hit_limit,omitempty"` // pickaxe / couple / authors
 }
 
 // HasContent reports whether s is worth restoring.
