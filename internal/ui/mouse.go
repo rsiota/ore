@@ -4,12 +4,19 @@ import tea "github.com/charmbracelet/bubbletea"
 
 // handleMouse routes mouse events. Overlays own the screen; otherwise a
 // left-click selects a cell in the main grid or a line in the right pane.
+// A press on the main|detail seam starts a creel-style resize drag.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.splitDragging {
+		return m.handleSplitDrag(msg)
+	}
 	if m.help.Visible() || m.palette.IsVisible() || m.branches.IsVisible() || m.bookmarks.IsVisible() {
 		return m, nil
 	}
 	if m.exTyping || m.filterTyping {
 		return m, nil
+	}
+	if isMouseLeftClick(msg) && m.onMainSplit(msg.X, msg.Y) {
+		return m.beginSplitDrag(msg.X)
 	}
 	if !isMouseLeftClick(msg) {
 		return m, nil
@@ -18,6 +25,46 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	}
 	return m.handleMainGridClick(msg.X, msg.Y)
+}
+
+func (m Model) onMainSplit(x, y int) bool {
+	if m.width < 80 || m.height < 2 {
+		return false
+	}
+	if y < 0 || y >= m.panesHeight() {
+		return false
+	}
+	seam := m.mainPaneWidth()
+	return x == seam-1 || x == seam
+}
+
+func (m Model) beginSplitDrag(x int) (tea.Model, tea.Cmd) {
+	cur := m.mainPaneWidth()
+	m.splitDragging = true
+	m.splitDragOff = x - cur
+	return m.applySplitDragX(x)
+}
+
+func (m Model) handleSplitDrag(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action == tea.MouseActionMotion ||
+		(msg.Type == tea.MouseLeft && msg.Action != tea.MouseActionRelease) {
+		return m.applySplitDragX(msg.X)
+	}
+	if msg.Type == tea.MouseRelease || msg.Action == tea.MouseActionRelease {
+		m.splitDragging = false
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) applySplitDragX(x int) (tea.Model, tea.Cmd) {
+	before := m.mainPaneWidth()
+	m.mainPaneSplitW = m.clampMainPaneWidth(x - m.splitDragOff)
+	if m.mainPaneWidth() != before {
+		m.invalidateDetailCache()
+		m.layoutExplorer()
+	}
+	return m, nil
 }
 
 func isMouseLeftClick(msg tea.MouseMsg) bool {

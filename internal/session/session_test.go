@@ -67,9 +67,10 @@ func TestSaveLoadPickaxeEvolveHunks(t *testing.T) {
 		Author:      "alice",
 		Hunks:        true,
 		EvoStep:      2,
-		LogLimit:     1500,
-		HistoryLimit: 1000,
-		HitLimit:     200,
+		LogLimit:      1500,
+		HistoryLimit:  1000,
+		HitLimit:      200,
+		MainPaneWidth: 52,
 	}
 	if err := store.Save(repo, st); err != nil {
 		t.Fatal(err)
@@ -87,6 +88,9 @@ func TestSaveLoadPickaxeEvolveHunks(t *testing.T) {
 	}
 	if loaded.LogLimit != 1500 || loaded.HistoryLimit != 1000 || loaded.HitLimit != 200 {
 		t.Fatalf("windows = %#v", loaded)
+	}
+	if loaded.MainPaneWidth != 52 {
+		t.Fatalf("MainPaneWidth = %d, want 52", loaded.MainPaneWidth)
 	}
 }
 

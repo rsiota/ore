@@ -102,6 +102,9 @@ func (m Model) snapshotSession() session.State {
 	if n := m.effectiveHitLimit(); n > m.defaultHitLimit() {
 		st.HitLimit = n
 	}
+	if m.mainPaneSplitW > 0 {
+		st.MainPaneWidth = m.mainPaneSplitW
+	}
 	return st
 }
 
@@ -260,6 +263,9 @@ func (m *Model) applySessionChrome(st session.State) {
 	}
 	if st.HitLimit > 0 {
 		m.pickLimit = st.HitLimit
+	}
+	if st.MainPaneWidth > 0 {
+		m.mainPaneSplitW = st.MainPaneWidth
 	}
 	if (strings.EqualFold(st.Main, "blame") || strings.EqualFold(st.Main, "evolve")) &&
 		st.BlameGutterFold >= 0 && st.BlameGutterFold <= blameGutterFoldMax {

@@ -12,6 +12,7 @@ func TestRegistryHasHelpAndFilter(t *testing.T) {
 		hasQuit    bool
 		hasRefresh bool
 		hasPalette bool
+		hasResize  bool
 	)
 	for _, sec := range registry() {
 		for _, b := range sec.Items {
@@ -27,13 +28,15 @@ func TestRegistryHasHelpAndFilter(t *testing.T) {
 					hasRefresh = true
 				case "ctrl+p":
 					hasPalette = true
+				case "alt+h":
+					hasResize = true
 				}
 			}
 		}
 	}
-	if !hasHelp || !hasFilter || !hasQuit || !hasRefresh || !hasPalette {
-		t.Fatalf("registry missing core bindings: help=%v filter=%v quit=%v refresh=%v palette=%v",
-			hasHelp, hasFilter, hasQuit, hasRefresh, hasPalette)
+	if !hasHelp || !hasFilter || !hasQuit || !hasRefresh || !hasPalette || !hasResize {
+		t.Fatalf("registry missing core bindings: help=%v filter=%v quit=%v refresh=%v palette=%v resize=%v",
+			hasHelp, hasFilter, hasQuit, hasRefresh, hasPalette, hasResize)
 	}
 }
 

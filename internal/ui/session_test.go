@@ -141,6 +141,24 @@ func TestApplySessionChromeWindows(t *testing.T) {
 	}
 }
 
+func TestSnapshotSessionMainPaneWidth(t *testing.T) {
+	m := Model{main: MainCommits, mainPaneSplitW: 52}
+	st := m.snapshotSession()
+	if st.MainPaneWidth != 52 {
+		t.Fatalf("MainPaneWidth = %d, want 52", st.MainPaneWidth)
+	}
+	m.mainPaneSplitW = 0
+	st = m.snapshotSession()
+	if st.MainPaneWidth != 0 {
+		t.Fatalf("default split should omit width: %#v", st)
+	}
+
+	m.applySessionChrome(session.State{MainPaneWidth: 48})
+	if m.mainPaneSplitW != 48 {
+		t.Fatalf("applied split = %d, want 48", m.mainPaneSplitW)
+	}
+}
+
 func TestSnapshotSessionPickaxeAndHunks(t *testing.T) {
 	m := Model{
 		main:      MainPickaxe,

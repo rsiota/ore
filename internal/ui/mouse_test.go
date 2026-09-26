@@ -213,6 +213,41 @@ func TestMainGridClickIgnoresMotion(t *testing.T) {
 	}
 }
 
+func TestSplitDragResizesMainPane(t *testing.T) {
+	m := Model{width: 120, height: 30}
+	before := m.mainPaneWidth()
+	seam := before
+	next, _ := m.handleMouse(clickAt(seam, 4))
+	mm := next.(Model)
+	if !mm.splitDragging {
+		t.Fatal("press on seam should start a split drag")
+	}
+	motion := tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionMotion, X: seam + 9, Y: 4}
+	next, _ = mm.handleMouse(motion)
+	mm = next.(Model)
+	if mm.mainPaneWidth() != before+9 {
+		t.Fatalf("drag width = %d, want %d", mm.mainPaneWidth(), before+9)
+	}
+	release := tea.MouseMsg{Type: tea.MouseRelease, Action: tea.MouseActionRelease, X: seam + 9, Y: 4}
+	next, _ = mm.handleMouse(release)
+	mm = next.(Model)
+	if mm.splitDragging {
+		t.Fatal("release should end the drag")
+	}
+	if mm.mainPaneWidth() != before+9 {
+		t.Fatalf("width after release = %d, want %d", mm.mainPaneWidth(), before+9)
+	}
+}
+
+func TestSplitDragIgnoredWhenNarrow(t *testing.T) {
+	m := Model{width: 79, height: 30}
+	next, _ := m.handleMouse(clickAt(m.mainPaneWidth(), 4))
+	mm := next.(Model)
+	if mm.splitDragging {
+		t.Fatal("narrow layout has no seam")
+	}
+}
+
 func TestMainGridClickFilesRow(t *testing.T) {
 	m := Model{
 		width:  120,

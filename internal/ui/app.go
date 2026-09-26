@@ -47,6 +47,11 @@ type Model struct {
 	focus  Focus
 	main   MainView
 
+	// mainPaneSplitW is the outer left-pane width in cells (0 = default half).
+	mainPaneSplitW int
+	splitDragging  bool
+	splitDragOff   int
+
 	commits         []git.Commit
 	cursor          int
 	commitOffset    int
@@ -955,6 +960,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.filterTyping {
 		return m.handleFilterKeys(msg)
+	}
+
+	if _, ok := normalizePaneResizeKey(msg.String()); ok {
+		m.chordG = false
+		return m.resizePane(msg.String()), nil
 	}
 
 	if m.focus == FocusExplorer && m.explorer.Opened() {
@@ -2720,7 +2730,10 @@ func (m Model) mainPaneWidth() int {
 	if m.width < 80 {
 		return max(20, m.width)
 	}
-	return max(40, m.width/2)
+	if m.mainPaneSplitW > 0 {
+		return m.clampMainPaneWidth(m.mainPaneSplitW)
+	}
+	return m.clampMainPaneWidth(m.width / 2)
 }
 
 func (m Model) detailInnerWidth() int {

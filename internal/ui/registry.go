@@ -32,6 +32,7 @@ func registry() []Section {
 				{"w", []string{"w"}, "toggle diff soft-wrap", "w"},
 				{"q / ctrl+c", []string{"q", "ctrl+c"}, "quit", "q"},
 				{"tab", []string{"tab"}, "focus main ↔ detail", "tab"},
+				{"alt+h/j/k/l", []string{"alt+h", "alt+j", "alt+k", "alt+l", "alt+ctrl+h", "alt+ctrl+j", "alt+ctrl+k", "alt+ctrl+l"}, "resize focused pane", ""},
 				{"esc / backspace", []string{"esc", "backspace"}, "go back / close overlay", "esc"},
 				{"/", []string{"/"}, "filter current grid", "/"},
 			},

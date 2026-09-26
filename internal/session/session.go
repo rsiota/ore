@@ -59,6 +59,9 @@ type State struct {
 	LogLimit     int `json:"log_limit,omitempty"`
 	HistoryLimit int `json:"history_limit,omitempty"`
 	HitLimit     int `json:"hit_limit,omitempty"` // pickaxe / couple / authors
+
+	// MainPaneWidth is the left pane outer width in cells (0 = default half).
+	MainPaneWidth int `json:"main_pane_width,omitempty"`
 }
 
 // HasContent reports whether s is worth restoring.
