@@ -191,10 +191,11 @@ func (p palette) Update(msg tea.KeyMsg) (palette, tea.Cmd) {
 			return p, nil
 		}
 		return p, replayKeySequence(it.replay)
-	case "up", "ctrl+p", "k":
+	case "up", "ctrl+p":
+		// Creel palette: letters (including j/k) filter; arrows / ctrl+n/p move.
 		p.moveCursor(-1)
 		return p, nil
-	case "down", "ctrl+n", "j":
+	case "down", "ctrl+n":
 		p.moveCursor(1)
 		return p, nil
 	case "backspace":
@@ -203,10 +204,6 @@ func (p palette) Update(msg tea.KeyMsg) (palette, tea.Cmd) {
 			p.input = string(r[:len(r)-1])
 			p.refilter()
 		}
-		return p, nil
-	case "ctrl+u":
-		p.input = ""
-		p.refilter()
 		return p, nil
 	}
 	if ch, ok := keyFilterChar(msg); ok {

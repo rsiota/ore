@@ -65,6 +65,37 @@ func TestPaletteNavigationWraps(t *testing.T) {
 	}
 }
 
+func TestPaletteJKTypesIntoFilter(t *testing.T) {
+	var p palette
+	p.Open()
+	p.cursor = 0
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if p.input != "j" {
+		t.Fatalf("j should type, input=%q cursor=%d", p.input, p.cursor)
+	}
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if p.input != "jk" {
+		t.Fatalf("k should type, input=%q", p.input)
+	}
+}
+
+func TestPaletteCtrlNPMoves(t *testing.T) {
+	var p palette
+	p.Open()
+	if len(p.filtered) < 2 {
+		t.Fatal("need at least two palette rows")
+	}
+	p.cursor = 0
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
+	if p.cursor != 1 || p.input != "" {
+		t.Fatalf("ctrl+n should move, cursor=%d input=%q", p.cursor, p.input)
+	}
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	if p.cursor != 0 || p.input != "" {
+		t.Fatalf("ctrl+p should move, cursor=%d input=%q", p.cursor, p.input)
+	}
+}
+
 func TestPaletteEscape(t *testing.T) {
 	var p palette
 	p.Open()
