@@ -39,7 +39,7 @@ Commit grid is columnar (sort + column-scoped `/`). Ex commands (`:blame`, `:his
 | `:bookmarks [clear]` | Toggle bookmarks panel (or clear all) |
 | `:theme [light|dark]` | Switch colour theme (persisted) |
 | `:set transparent_background [on|off]` | Leave terminal background unpainted |
-| `:session [save|clear]` | Show, save, or clear restored workspace |
+| `:session [save|clear]` | Show, save, or clear restored workspace (includes pickaxe / evolve / hunks) |
 | `:help` | Open help |
 | `:q` | Quit |
 

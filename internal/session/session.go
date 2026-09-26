@@ -39,11 +39,27 @@ type State struct {
 	ZenContext      int    `json:"zen_context,omitempty"`
 	DetailWrap      bool   `json:"detail_wrap,omitempty"`
 	BlameGutterFold int    `json:"blame_gutter_fold,omitempty"`
+	Hunks           bool   `json:"hunks,omitempty"` // bottom hunk strip (H / :hunks)
+
+	// Pickaxe-family restore (Main == pickaxe | couple | authors).
+	// The hit list is re-run on restore, not serialized.
+	PickQuery   string   `json:"pick_query,omitempty"` // -S / -G text
+	PickMode    string   `json:"pick_mode,omitempty"`  // string | regexp
+	PickPath    string   `json:"pick_path,omitempty"`  // optional path limiter
+	CoupleSeeds []string `json:"couple_seeds,omitempty"`
+	CoupleWith  string   `json:"couple_with,omitempty"`
+	Author      string   `json:"author,omitempty"`
+	AuthorPaths []string `json:"author_paths,omitempty"`
+	AuthorRev   string   `json:"author_rev,omitempty"`
+
+	// EvoStep is the selected row in the line evolution stack (Main == evolve).
+	EvoStep int `json:"evo_step,omitempty"`
 }
 
 // HasContent reports whether s is worth restoring.
 func (s State) HasContent() bool {
-	return s.Main != "" || s.Commit != "" || s.Path != "" || s.ViewRev != ""
+	return s.Main != "" || s.Commit != "" || s.Path != "" || s.ViewRev != "" ||
+		s.PickQuery != "" || s.Author != "" || s.CoupleWith != ""
 }
 
 // Store persists State per repository path as JSON under <configDir>/sessions/.

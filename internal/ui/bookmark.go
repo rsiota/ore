@@ -109,11 +109,11 @@ func (m *Model) jumpBookmark(st session.State) tea.Cmd {
 	switch strings.ToLower(st.Main) {
 	case "history":
 		needCommits = false
-	case "blame":
+	case "blame", "evolve":
 		if strings.EqualFold(st.BlameFrom, "history") {
 			needCommits = false
 		}
-	case "commits", "":
+	case "pickaxe", "couple", "authors", "commits", "":
 		needCommits = false
 	}
 	if needCommits {

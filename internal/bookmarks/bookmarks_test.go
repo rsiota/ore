@@ -78,6 +78,14 @@ func TestViewSummary(t *testing.T) {
 	if got != "blame · abcdefg · pkg/a.go · L42" {
 		t.Fatalf("summary=%q", got)
 	}
+	got = ViewSummary(session.State{Main: "pickaxe", PickQuery: "token", Commit: "abcdefg123"})
+	if got != "pickaxe · abcdefg · token" {
+		t.Fatalf("pickaxe summary=%q", got)
+	}
+	got = ViewSummary(session.State{Main: "evolve", Path: "a.go", BlameLine: 9})
+	if got != "evolve · a.go · L9" {
+		t.Fatalf("evolve summary=%q", got)
+	}
 }
 
 func TestSameViewIgnoresChrome(t *testing.T) {
@@ -85,5 +93,10 @@ func TestSameViewIgnoresChrome(t *testing.T) {
 	b := session.State{Main: "files", Path: "a.go", Commit: "c", ZenContext: 9, DetailWrap: true}
 	if !SameView(a, b) {
 		t.Fatal("expected same location")
+	}
+	p1 := session.State{Main: "pickaxe", PickQuery: "foo"}
+	p2 := session.State{Main: "pickaxe", PickQuery: "bar"}
+	if SameView(p1, p2) {
+		t.Fatal("different pickaxe queries should not match")
 	}
 }

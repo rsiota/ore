@@ -51,8 +51,23 @@ func ViewSummary(st session.State) string {
 	if st.Path != "" {
 		parts = append(parts, st.Path)
 	}
-	if strings.EqualFold(st.Main, "blame") && st.BlameLine > 0 {
-		parts = append(parts, fmt.Sprintf("L%d", st.BlameLine))
+	switch strings.ToLower(st.Main) {
+	case "blame", "evolve":
+		if st.BlameLine > 0 {
+			parts = append(parts, fmt.Sprintf("L%d", st.BlameLine))
+		}
+	case "pickaxe":
+		if st.PickQuery != "" {
+			parts = append(parts, st.PickQuery)
+		}
+	case "couple":
+		if st.CoupleWith != "" {
+			parts = append(parts, st.CoupleWith)
+		}
+	case "authors":
+		if st.Author != "" {
+			parts = append(parts, st.Author)
+		}
 	}
 	return strings.Join(parts, " · ")
 }
@@ -66,7 +81,13 @@ func SameView(a, b session.State) bool {
 		a.Path == b.Path &&
 		a.BlameRev == b.BlameRev &&
 		a.BlameLine == b.BlameLine &&
-		strings.EqualFold(a.BlameFrom, b.BlameFrom)
+		strings.EqualFold(a.BlameFrom, b.BlameFrom) &&
+		a.PickQuery == b.PickQuery &&
+		strings.EqualFold(a.PickMode, b.PickMode) &&
+		a.PickPath == b.PickPath &&
+		a.CoupleWith == b.CoupleWith &&
+		a.Author == b.Author &&
+		a.EvoStep == b.EvoStep
 }
 
 // Store manages bookmarks per repository under <configDir>/bookmarks/.

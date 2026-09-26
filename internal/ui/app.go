@@ -188,6 +188,8 @@ type Model struct {
 	pendingRestore       *session.State
 	restoreAfterFiles    bool
 	restoreAfterHistory  bool
+	restoreAfterPick     bool // after pickaxe/couple/authors load, reselect commit
+	restoreAfterEvo      bool // after blame load, open line evolution
 	sessionKeepBlameFold bool // keep gutter fold from session across blame load
 }
 
@@ -576,6 +578,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.status = "error"
+			m.clearSessionRestore()
 			return m, nil
 		}
 		m.blame = msg.lines
@@ -609,6 +612,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if bl, ok := m.selectedBlameLine(); ok && bl.PreviousPath != "" && bl.PreviousPath != m.blamePath {
 			m.status += " · was " + bl.PreviousPath
 		}
+		if m.restoreAfterEvo && m.pendingRestore != nil && strings.EqualFold(m.pendingRestore.Main, "evolve") {
+			if len(m.blame) == 0 {
+				m.clearSessionRestore()
+				m.detail = nil
+				m.detailPath = ""
+				return m, nil
+			}
+			return m.openLineEvolution()
+		}
 		if len(m.blame) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -624,6 +636,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.status = "error"
+			m.clearSessionRestore()
 			return m, nil
 		}
 		m.evo = msg.steps
@@ -635,6 +648,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chordG = false
 		m.status = fmt.Sprintf("evolve · %s · %d steps%s · enter blame · esc back",
 			m.evoOriginPath, len(m.evo), cappedSuffix(len(m.evo), git.DefaultEvolutionLimit))
+		if m.restoreAfterEvo {
+			m.finishRestoreEvolve()
+		}
 		if len(m.evo) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -650,6 +666,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.status = "error"
+			m.clearSessionRestore()
 			return m, nil
 		}
 		m.pickaxe = msg.hits
@@ -664,6 +681,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			pickaxeModeLabel(m.pickMode), truncateQuery(m.pickQuery, 24), len(m.pickaxe), cappedSuffix(len(m.pickaxe), git.DefaultPickaxeLimit))
 		if m.pickHlOn {
 			m.status += " · hl on"
+		}
+		if m.restoreAfterPick {
+			m.finishRestorePick()
 		}
 		if len(m.pickaxe) > 0 {
 			return m, m.reloadDetail()
@@ -680,6 +700,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.status = "error"
+			m.clearSessionRestore()
 			return m, nil
 		}
 		m.pickaxe = msg.hits
@@ -696,6 +717,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chordG = false
 		m.status = fmt.Sprintf("couple · %s · %d commits%s · enter · b blame · esc back",
 			truncateQuery(msg.label, 40), len(m.pickaxe), cappedSuffix(len(m.pickaxe), git.CoChangeCommitCap))
+		if m.restoreAfterPick {
+			m.finishRestorePick()
+		}
 		if len(m.pickaxe) > 0 {
 			return m, m.reloadDetail()
 		}
@@ -711,6 +735,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.status = "error"
+			m.clearSessionRestore()
 			return m, nil
 		}
 		m.pickaxe = msg.hits
@@ -731,6 +756,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chordG = false
 		m.status = fmt.Sprintf("authors · %s · %d commits%s · enter · b blame · esc back",
 			truncateQuery(msg.label, 40), len(m.pickaxe), cappedSuffix(len(m.pickaxe), git.OwnershipCommitCap))
+		if m.restoreAfterPick {
+			m.finishRestorePick()
+		}
 		if len(m.pickaxe) > 0 {
 			return m, m.reloadDetail()
 		}

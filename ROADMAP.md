@@ -103,7 +103,7 @@ Analogous to creel’s FK explorer:
 ### Wave 4 — Polish & power
 
 - [ ] Timeline / churn strip
-- [x] Session restore (repo + view + file + commit)
+- [x] Session restore (repo + view + file + commit + pickaxe/evolve/hunks)
 - [x] Bookmarks / named views (commits, files, blame lines)
 - [x] Readonly code yank browser (detail + blame code column)
 - [ ] Charts (`M` / `:bar` churn, author frequency) — optional
@@ -128,6 +128,7 @@ North star: make **line → previous versions → co-changed regions → authors
 9. [x] **Quiet ownership summary** — top authors with % in `g r` (path history / recent log sample); muted rows, author-hued names
 10. [x] **Ownership → author commits** — `Enter` on an Ownership row (or `:authors`) lists that author's commits on those paths
 11. [x] **Honest scale** — commit window `500/N` + `:more` / `+` / `j` at end; sample labels on Ownership / Often-with; capped titles on pickaxe / couple / authors / history / evolve; children hops invert the loaded log (then `hash..tip`, then a cached `--all`)
+12. [x] **Session restore for new modes** — pickaxe / couple / authors re-run on reopen; evolve restores origin blame then the stack; hunk strip persists; bookmarks share the snapshot
 
 Later (when the above feels sticky): timeline strip, export provenance trail, large-repo caching. Keep AI/charts/PR links optional and thin.
 

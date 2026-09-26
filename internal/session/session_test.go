@@ -12,13 +12,13 @@ func TestSaveLoadClear(t *testing.T) {
 	repo := "/tmp/demo-repo"
 
 	st := State{
-		Main:   "blame",
-		Commit: "abc123",
-		Path:   "internal/ui/app.go",
-		BlameRev: "abc123",
-		BlameLine: 42,
-		BlameFrom: "files",
-		DiffMode: "zen",
+		Main:       "blame",
+		Commit:     "abc123",
+		Path:       "internal/ui/app.go",
+		BlameRev:   "abc123",
+		BlameLine:  42,
+		BlameFrom:  "files",
+		DiffMode:   "zen",
 		ZenContext: 3,
 	}
 	if err := store.Save(repo, st); err != nil {
@@ -50,6 +50,37 @@ func TestSaveLoadClear(t *testing.T) {
 	empty, err := store.Load(repo)
 	if err != nil || empty.HasContent() {
 		t.Fatalf("after clear: %#v %v", empty, err)
+	}
+}
+
+func TestSaveLoadPickaxeEvolveHunks(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	repo := "/tmp/demo-modes"
+	st := State{
+		Main:        "pickaxe",
+		PickQuery:   "token",
+		PickMode:    "regexp",
+		PickPath:    "a.go",
+		CoupleSeeds: []string{"a.go"},
+		CoupleWith:  "b.go",
+		Author:      "alice",
+		Hunks:       true,
+		EvoStep:     2,
+	}
+	if err := store.Save(repo, st); err != nil {
+		t.Fatal(err)
+	}
+	store.cache = map[string]State{}
+	loaded, err := store.Load(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Main != "pickaxe" || loaded.PickQuery != "token" || loaded.PickMode != "regexp" {
+		t.Fatalf("pickaxe = %#v", loaded)
+	}
+	if !loaded.Hunks || loaded.EvoStep != 2 || loaded.CoupleWith != "b.go" || loaded.Author != "alice" {
+		t.Fatalf("extra fields = %#v", loaded)
 	}
 }
 

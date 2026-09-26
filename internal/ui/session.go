@@ -48,8 +48,7 @@ func (m Model) snapshotSession() session.State {
 			st.BlameFrom = "files"
 		}
 	case MainLineEvo:
-		// Persist as blame at the evolution origin; reopen restores the file view.
-		st.Main = "blame"
+		st.Main = "evolve"
 		st.Path = m.evoOriginPath
 		st.BlameRev = m.evoOriginRev
 		st.Commit = m.filesCommitHash
@@ -59,12 +58,40 @@ func (m Model) snapshotSession() session.State {
 		if len(m.evo) > 0 {
 			st.BlameLine = m.evo[0].Line.Line
 		}
-		st.BlameFrom = "files"
+		st.EvoStep = m.evoCursor
+		if m.blameFrom == MainHistory {
+			st.BlameFrom = "history"
+		} else {
+			st.BlameFrom = "files"
+		}
 	case MainPickaxe:
-		st.Main = "commits"
 		if h, ok := m.selectedPickaxeHit(); ok {
 			st.Commit = h.Commit.Hash
 		}
+		switch m.pickKind {
+		case hitListCouple:
+			st.Main = "couple"
+			st.CoupleSeeds = append([]string(nil), m.coupleSeeds...)
+			st.CoupleWith = m.couplePartner
+			st.Path = m.couplePartner
+		case hitListAuthors:
+			st.Main = "authors"
+			st.Author = m.authorFilter
+			st.AuthorPaths = append([]string(nil), m.authorPaths...)
+			st.AuthorRev = m.authorRev
+			if len(m.authorPaths) == 1 {
+				st.Path = m.authorPaths[0]
+			}
+		default:
+			st.Main = "pickaxe"
+			st.PickQuery = m.pickQuery
+			st.PickMode = pickaxeModeLabel(m.pickMode)
+			st.PickPath = m.pickPath
+			st.Path = m.pickPath
+		}
+	}
+	if m.hunkMode {
+		st.Hunks = true
 	}
 	return st
 }
@@ -159,6 +186,8 @@ func (m *Model) exSession(args []string) tea.Cmd {
 		m.pendingRestore = nil
 		m.restoreAfterFiles = false
 		m.restoreAfterHistory = false
+		m.restoreAfterPick = false
+		m.restoreAfterEvo = false
 		m.status = "session cleared"
 		return nil
 	default:
@@ -178,8 +207,26 @@ func sessionSummary(st session.State) string {
 	if st.Path != "" {
 		parts = append(parts, st.Path)
 	}
-	if st.Main == "blame" && st.BlameLine > 0 {
-		parts = append(parts, fmt.Sprintf("L%d", st.BlameLine))
+	switch strings.ToLower(st.Main) {
+	case "blame", "evolve":
+		if st.BlameLine > 0 {
+			parts = append(parts, fmt.Sprintf("L%d", st.BlameLine))
+		}
+	case "pickaxe":
+		if st.PickQuery != "" {
+			parts = append(parts, st.PickQuery)
+		}
+	case "couple":
+		if st.CoupleWith != "" {
+			parts = append(parts, st.CoupleWith)
+		}
+	case "authors":
+		if st.Author != "" {
+			parts = append(parts, st.Author)
+		}
+	}
+	if st.Hunks {
+		parts = append(parts, "hunks")
 	}
 	return strings.Join(parts, " · ")
 }
@@ -195,7 +242,8 @@ func (m *Model) applySessionChrome(st session.State) {
 		m.zenContext = clampZenContext(st.ZenContext)
 	}
 	m.detailWrap = st.DetailWrap
-	if strings.EqualFold(st.Main, "blame") &&
+	m.hunkMode = st.Hunks
+	if (strings.EqualFold(st.Main, "blame") || strings.EqualFold(st.Main, "evolve")) &&
 		st.BlameGutterFold >= 0 && st.BlameGutterFold <= blameGutterFoldMax {
 		m.blameGutterFold = st.BlameGutterFold
 		m.sessionKeepBlameFold = true
@@ -230,7 +278,7 @@ func (m *Model) continueSessionRestore() tea.Cmd {
 		m.historySortDir = SortNone
 		m.loadingHistory = true
 		return loadHistoryCmd(m.repo, st.Path)
-	case "blame":
+	case "blame", "evolve":
 		if st.Path == "" {
 			m.clearSessionRestore()
 			return m.reloadDetail()
@@ -244,17 +292,47 @@ func (m *Model) continueSessionRestore() tea.Cmd {
 			m.loadingHistory = true
 			return loadHistoryCmd(m.repo, st.Path)
 		}
-		// files → blame stack
+		// files → blame stack (evolve continues after blame loads)
 		m.restoreAfterFiles = true
 		m.openFilesPending = true
 		m.detailFilterPath = ""
 		m.loadingDetail = true
 		return m.reloadDetailNow()
+	case "pickaxe", "couple", "authors":
+		return m.startRestorePickaxe(*st)
 	default:
 		m.clearSessionRestore()
 		m.refreshStatus()
 		return m.reloadDetail()
 	}
+}
+
+func (m *Model) startRestorePickaxe(st session.State) tea.Cmd {
+	m.main = MainCommits
+	m.restoreAfterPick = true
+	var next tea.Model
+	var cmd tea.Cmd
+	switch strings.ToLower(st.Main) {
+	case "couple":
+		next, cmd = m.startCouple(st.CoupleSeeds, st.CoupleWith)
+	case "authors":
+		rev := st.AuthorRev
+		if rev == "" {
+			rev = m.viewRev
+		}
+		next, cmd = m.startAuthors(st.Author, st.AuthorPaths, rev)
+	default:
+		mode := git.PickaxeString
+		if strings.EqualFold(st.PickMode, "regexp") {
+			mode = git.PickaxeRegexp
+		}
+		next, cmd = m.startPickaxe(st.PickQuery, mode, st.PickPath)
+	}
+	*m = next.(Model)
+	if cmd == nil {
+		m.clearSessionRestore()
+	}
+	return cmd
 }
 
 func (m *Model) finishRestoreFiles() tea.Cmd {
@@ -264,7 +342,8 @@ func (m *Model) finishRestoreFiles() tea.Cmd {
 	}
 	m.selectFilePath(st.Path)
 	m.restoreAfterFiles = false
-	if strings.EqualFold(st.Main, "blame") && !strings.EqualFold(st.BlameFrom, "history") {
+	wantBlame := strings.EqualFold(st.Main, "blame") || strings.EqualFold(st.Main, "evolve")
+	if wantBlame && !strings.EqualFold(st.BlameFrom, "history") {
 		rev := st.BlameRev
 		if rev == "" {
 			rev = m.filesCommitHash
@@ -272,10 +351,15 @@ func (m *Model) finishRestoreFiles() tea.Cmd {
 		if rev == "" {
 			rev = st.Commit
 		}
+		if strings.EqualFold(st.Main, "evolve") {
+			m.restoreAfterEvo = true
+		} else {
+			m.clearSessionRestore()
+			m.status = fmt.Sprintf("restored · blame %s", st.Path)
+		}
+		cmd := m.startBlame(st.Path, rev, MainFiles)
 		m.blamePreferLine = st.BlameLine
-		m.clearSessionRestore()
-		m.status = fmt.Sprintf("restored · blame %s", st.Path)
-		return m.startBlame(st.Path, rev, MainFiles)
+		return cmd
 	}
 	m.clearSessionRestore()
 	m.refreshStatus()
@@ -289,7 +373,7 @@ func (m *Model) finishRestoreHistory() tea.Cmd {
 	}
 	m.selectHistoryCommit(st.Commit)
 	m.restoreAfterHistory = false
-	if strings.EqualFold(st.Main, "blame") {
+	if strings.EqualFold(st.Main, "blame") || strings.EqualFold(st.Main, "evolve") {
 		rev := st.BlameRev
 		if rev == "" {
 			rev = m.selectedHistoryHash()
@@ -301,10 +385,15 @@ func (m *Model) finishRestoreHistory() tea.Cmd {
 		if pc, ok := m.selectedHistory(); ok && pc.Path != "" {
 			path = pc.Path
 		}
+		if strings.EqualFold(st.Main, "evolve") {
+			m.restoreAfterEvo = true
+		} else {
+			m.clearSessionRestore()
+			m.status = fmt.Sprintf("restored · blame %s", path)
+		}
+		cmd := m.startBlame(path, rev, MainHistory)
 		m.blamePreferLine = st.BlameLine
-		m.clearSessionRestore()
-		m.status = fmt.Sprintf("restored · blame %s", path)
-		return m.startBlame(path, rev, MainHistory)
+		return cmd
 	}
 	m.clearSessionRestore()
 	m.refreshStatus()
@@ -315,6 +404,46 @@ func (m *Model) clearSessionRestore() {
 	m.pendingRestore = nil
 	m.restoreAfterFiles = false
 	m.restoreAfterHistory = false
+	m.restoreAfterPick = false
+	m.restoreAfterEvo = false
+}
+
+func (m *Model) finishRestorePick() {
+	st := m.pendingRestore
+	if st == nil {
+		m.restoreAfterPick = false
+		return
+	}
+	m.selectPickaxeCommit(st.Commit)
+	m.status = "restored · " + sessionSummary(*st)
+	m.clearSessionRestore()
+}
+
+func (m *Model) finishRestoreEvolve() {
+	st := m.pendingRestore
+	if st == nil {
+		m.restoreAfterEvo = false
+		return
+	}
+	if st.EvoStep > 0 && st.EvoStep < len(m.evo) {
+		m.evoCursor = st.EvoStep
+		m.ensureEvoVisible()
+	}
+	m.status = "restored · " + sessionSummary(*st)
+	m.clearSessionRestore()
+}
+
+func (m *Model) selectPickaxeCommit(hash string) {
+	if hash == "" {
+		return
+	}
+	for i, h := range m.pickaxe {
+		if hashMatch(h.Commit.Hash, hash) {
+			m.pickCursor = i
+			m.ensurePickVisible()
+			return
+		}
+	}
 }
 
 func (m *Model) selectFilePath(path string) {
