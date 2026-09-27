@@ -12,13 +12,9 @@ func (m Model) handleHunkKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refreshStatus()
 		return m, nil
 	case "tab":
-		m.focus = FocusMain
-		if m.main == MainBlame {
-			m.enterBlameYank()
-		} else {
-			m.enterDetailYank()
-		}
-		return m, nil
+		return m.cycleFocus()
+	case "shift+tab":
+		return m.cycleFocusBack()
 	case "H":
 		m.toggleHunkMode()
 		return m, nil

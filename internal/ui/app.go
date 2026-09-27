@@ -993,6 +993,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.toggleSidebar()
 	}
 
+	if isPaneNavKey(msg.String()) {
+		m.chordG = false
+		return m.handlePaneNav(msg.String())
+	}
+
 	if m.focus == FocusExplorer && m.explorer.Opened() {
 		return m.handleExplorerKeys(msg)
 	}
@@ -1134,9 +1139,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.addBookmark("")
 		return m, nil
-	case "tab":
-		m.chordG = false
-		return m.cycleFocus()
 	case "esc", "backspace":
 		m.chordG = false
 		if m.explorer.Opened() && msg.String() == "esc" {
@@ -1209,67 +1211,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleHunkKeys(msg)
 	case FocusSidebar:
 		return m.handleSidebarKeys(msg)
-	}
-	return m, nil
-}
-
-func (m Model) cycleFocus() (tea.Model, tea.Cmd) {
-	if m.explorer.Opened() {
-		switch m.focus {
-		case FocusSidebar:
-			m.focus = FocusMain
-		case FocusMain:
-			m.focus = FocusExplorer
-		case FocusExplorer:
-			if m.sidebarOpen {
-				m.focus = FocusSidebar
-				m.status = m.treeStatus()
-			} else {
-				m.focus = FocusMain
-			}
-		default:
-			m.focus = FocusMain
-		}
-		return m, nil
-	}
-	switch m.focus {
-	case FocusSidebar:
-		m.focus = FocusMain
-		m.refreshStatus()
-		return m, nil
-	case FocusMain:
-		if m.hunkMode {
-			m.rebuildDetailHunks()
-			m.focus = FocusHunks
-			if len(m.hunks) == 0 {
-				m.status = "hunks · none in this detail"
-			} else {
-				m.status = fmtHunkStatus(m.hunkCursor, len(m.hunks), m.hunks[m.hunkCursor])
-			}
-			return m, nil
-		}
-		if m.main == MainBlame {
-			m.enterBlameYank()
-		} else {
-			m.enterDetailYank()
-		}
-	case FocusHunks:
-		m.focus = FocusMain
-		if m.main == MainBlame {
-			m.enterBlameYank()
-		} else {
-			m.enterDetailYank()
-		}
-	case FocusBlameYank:
-		m.leaveBlameYank()
-		m.enterDetailYank()
-	default:
-		m.leaveDetailYank()
-		if m.sidebarOpen {
-			m.focus = FocusSidebar
-			m.status = m.treeStatus()
-			return m, m.ensureTreeLoaded()
-		}
 	}
 	return m, nil
 }
