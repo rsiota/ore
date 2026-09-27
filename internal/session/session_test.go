@@ -58,15 +58,15 @@ func TestSaveLoadPickaxeEvolveHunks(t *testing.T) {
 	store := NewStore(dir)
 	repo := "/tmp/demo-modes"
 	st := State{
-		Main:        "pickaxe",
-		PickQuery:   "token",
-		PickMode:    "regexp",
-		PickPath:    "a.go",
-		CoupleSeeds: []string{"a.go"},
-		CoupleWith:  "b.go",
-		Author:      "alice",
-		Hunks:        true,
-		EvoStep:      2,
+		Main:          "pickaxe",
+		PickQuery:     "token",
+		PickMode:      "regexp",
+		PickPath:      "a.go",
+		CoupleSeeds:   []string{"a.go"},
+		CoupleWith:    "b.go",
+		Author:        "alice",
+		Hunks:         true,
+		EvoStep:       2,
 		LogLimit:      1500,
 		HistoryLimit:  1000,
 		HitLimit:      200,
@@ -91,6 +91,27 @@ func TestSaveLoadPickaxeEvolveHunks(t *testing.T) {
 	}
 	if loaded.MainPaneWidth != 52 {
 		t.Fatalf("MainPaneWidth = %d, want 52", loaded.MainPaneWidth)
+	}
+}
+
+func TestSaveLoadSidebar(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	repo := "/tmp/demo-tree"
+	st := State{Sidebar: true, SidebarWidth: 28, SidebarPath: "src/a.go"}
+	if !st.HasContent() {
+		t.Fatal("sidebar-only state should have content")
+	}
+	if err := store.Save(repo, st); err != nil {
+		t.Fatal(err)
+	}
+	store.cache = map[string]State{}
+	loaded, err := store.Load(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.Sidebar || loaded.SidebarWidth != 28 || loaded.SidebarPath != "src/a.go" {
+		t.Fatalf("loaded = %#v", loaded)
 	}
 }
 

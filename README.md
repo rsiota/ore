@@ -12,7 +12,7 @@ go run ./cmd/ore /path/to/repo
 go run ./cmd/ore -C /path/to/repo
 ```
 
-**Keys:** `ctrl+p` palette · `m` bookmark · `g m` / `ctrl+g` bookmarks · `H` hunks · `p`/`c`/`u` DAG hops · `+` / `:more` older commits / history / pickaxe · `D` zen/unified diff · `w` wrap · `[`/`]` zen context · `alt+h/l` resize panes · `:` commands · `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `F` evolve · `esc` back · `q` quit
+**Keys:** `ctrl+p` palette · `alt+b` file tree · `m` bookmark · `g m` / `ctrl+g` bookmarks · `H` hunks · `p`/`c`/`u` DAG hops · `+` / `:more` older commits / history / pickaxe · `D` zen/unified diff · `w` wrap · `[`/`]` zen context · `alt+h/l` resize panes · `:` commands · `g r` relations · `?` help · `/` filter · `Enter` open · `b` blame · `f` follow · `F` evolve · `esc` back · `q` quit
 
 **Commit grid:** soft graph · `h`/`l` columns · `o` cycle sort · `/` filters the active column
 
@@ -33,6 +33,7 @@ Commit grid is columnar (sort + column-scoped `/`). Ex commands (`:blame`, `:his
 | `:evolve` | Line evolution stack for the selected blame line (`F`) |
 | `:history <path>` | Path history with rename follow + “was / moved from” edges |
 | `:goto <hash>` | Jump to commit (prefix match) |
+| `:tree` / `:sidebar` | Toggle the file tree sidebar (`alt+b`) |
 | `:hunks` | Toggle the bottom hunk list strip |
 | `:more [count]` | Load older commits, history, or pickaxe/couple/authors hits |
 | `:bookmark [name]` | Bookmark the current view |
@@ -47,7 +48,7 @@ Commit grid is columnar (sort + column-scoped `/`). Ex commands (`:blame`, `:his
 
 - Go 1.26+
 - [Bubble Tea](https://github.com/charmbracelet/bubbletea) + [Lipgloss](https://github.com/charmbracelet/lipgloss)
-- System `git` CLI for log / show / (later) blame and `--follow`
+- System `git` CLI for log / show / blame / `--follow` / `ls-tree`
 
 ## Layout (target)
 
@@ -61,7 +62,7 @@ Commit grid is columnar (sort + column-scoped `/`). Ex commands (`:blame`, `:his
 └────────────────────┴──────────────────────────────────────────────────┴──────────────┘
 ```
 
-Wave 0 ships the main grid + detail only.
+`alt+b` docks the file tree; `H` docks the hunk strip. Other sidebar slots (branches, authors) come later.
 
 ## License
 

@@ -32,6 +32,7 @@ func registry() []Section {
 				{"w", []string{"w"}, "toggle diff soft-wrap", "w"},
 				{"q / ctrl+c", []string{"q", "ctrl+c"}, "quit", "q"},
 				{"tab", []string{"tab"}, "focus main ↔ detail", "tab"},
+				{"alt+b", []string{"alt+b"}, "toggle file tree sidebar", "alt+b"},
 				{"alt+h/j/k/l", []string{"alt+h", "alt+j", "alt+k", "alt+l", "alt+ctrl+h", "alt+ctrl+j", "alt+ctrl+k", "alt+ctrl+l"}, "resize focused pane", ""},
 				{"esc / backspace", []string{"esc", "backspace"}, "go back / close overlay", "esc"},
 				{"/", []string{"/"}, "filter current grid", "/"},
@@ -110,6 +111,19 @@ func registry() []Section {
 			},
 		},
 		{
+			Title: "File tree (alt+b)",
+			Items: []Binding{
+				{"alt+b", []string{"alt+b"}, "toggle file tree sidebar", "alt+b"},
+				{"j/k", []string{"j", "k"}, "move in tree", "j/k"},
+				{"h / l", []string{"h", "l"}, "collapse · parent / expand · open", "h/l"},
+				{"enter", []string{"enter"}, "open path history", "enter"},
+				{"b", []string{"b"}, "blame file at the viewed tip", "b"},
+				{"/", []string{"/"}, "filter paths in the tree", "/"},
+				{"tab", []string{"tab"}, "focus tree ↔ main", "tab"},
+				{"esc", []string{"esc"}, "return focus to main grid", "esc"},
+			},
+		},
+		{
 			Title: "Hunk list (H)",
 			Items: []Binding{
 				{"H", []string{"H"}, "toggle bottom hunk strip", "H"},
@@ -169,6 +183,7 @@ func registry() []Section {
 		{
 			Title: "Views",
 			Items: []Binding{
+				{"tree", nil, "file tree sidebar (alt+b) — path on-ramp", ""},
 				{"commits", nil, "repository log (start)", ""},
 				{"files", nil, "paths changed in the selected commit", ""},
 				{"history", nil, "git log --follow for a path", ""},
@@ -216,17 +231,17 @@ func statusHintList(main MainView, explorerOpen bool) []string {
 	}
 	switch main {
 	case MainCommits:
-		return append([]string{"j/k"}, append(hintsForSection("Commit grid"), "gb", "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Commit grid"), "gb", "gr", "D", "w", "tab", "alt+b", "ctrl+p", "?", "esc", "q")...)
 	case MainFiles:
-		return append([]string{"j/k"}, append(hintsForSection("Files grid"), "gb", "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Files grid"), "gb", "gr", "D", "w", "tab", "alt+b", "ctrl+p", "?", "esc", "q")...)
 	case MainHistory:
-		return append([]string{"j/k"}, append(hintsForSection("History grid"), "+", "gb", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("History grid"), "+", "gb", "D", "w", "tab", "alt+b", "ctrl+p", "?", "esc", "q")...)
 	case MainBlame:
-		return append([]string{"j/k"}, append(hintsForSection("Blame"), "gb", "gr", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Blame"), "gb", "gr", "D", "w", "tab", "alt+b", "ctrl+p", "?", "esc", "q")...)
 	case MainLineEvo:
-		return append([]string{"j/k"}, append(hintsForSection("Line evolution"), "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Line evolution"), "D", "w", "tab", "alt+b", "ctrl+p", "?", "esc", "q")...)
 	case MainPickaxe:
-		return append([]string{"j/k"}, append(hintsForSection("Pickaxe"), "+", "D", "w", "tab", "ctrl+p", "?", "esc", "q")...)
+		return append([]string{"j/k"}, append(hintsForSection("Pickaxe"), "+", "D", "w", "tab", "alt+b", "ctrl+p", "?", "esc", "q")...)
 	default:
 		return []string{"j/k", "enter", "tab", "D", "w", "ctrl+p", "?", "esc", "q"}
 	}
@@ -239,6 +254,9 @@ func statusHintListFocus(main MainView, explorerOpen bool, focus Focus) []string
 	}
 	if focus == FocusDetail || focus == FocusBlameYank {
 		return hintsForSection("Yank browser")
+	}
+	if focus == FocusSidebar {
+		return hintsForSection("File tree (alt+b)")
 	}
 	return statusHintList(main, explorerOpen)
 }

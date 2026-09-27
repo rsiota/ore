@@ -12,8 +12,11 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.help.Visible() || m.palette.IsVisible() || m.branches.IsVisible() || m.bookmarks.IsVisible() {
 		return m, nil
 	}
-	if m.exTyping || m.filterTyping {
+	if m.exTyping || m.filterTyping || m.tree.filterTyping {
 		return m, nil
+	}
+	if isMouseLeftClick(msg) && m.onSidebarSplit(msg.X, msg.Y) {
+		return m.beginSidebarSplitDrag(msg.X)
 	}
 	if isMouseLeftClick(msg) && m.onMainSplit(msg.X, msg.Y) {
 		return m.beginSplitDrag(msg.X)
@@ -21,10 +24,24 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if !isMouseLeftClick(msg) {
 		return m, nil
 	}
+	if next, ok := m.handleSidebarClick(msg.X, msg.Y); ok {
+		return next, nil
+	}
 	if next, cmd, ok := m.handleRightPaneClick(msg.X, msg.Y); ok {
 		return next, cmd
 	}
 	return m.handleMainGridClick(msg.X, msg.Y)
+}
+
+func (m Model) onSidebarSplit(x, y int) bool {
+	if !m.sidebarDocked() || m.height < 2 {
+		return false
+	}
+	if y < 0 || y >= m.panesHeight() {
+		return false
+	}
+	seam := m.sidebarWidth()
+	return x == seam-1 || x == seam
 }
 
 func (m Model) onMainSplit(x, y int) bool {
@@ -34,13 +51,22 @@ func (m Model) onMainSplit(x, y int) bool {
 	if y < 0 || y >= m.panesHeight() {
 		return false
 	}
-	seam := m.mainPaneWidth()
+	seam := m.sidebarWidth() + m.mainPaneWidth()
 	return x == seam-1 || x == seam
+}
+
+func (m Model) beginSidebarSplitDrag(x int) (tea.Model, tea.Cmd) {
+	cur := m.sidebarWidth()
+	m.splitDragging = true
+	m.splitDragSidebar = true
+	m.splitDragOff = x - cur
+	return m.applySplitDragX(x)
 }
 
 func (m Model) beginSplitDrag(x int) (tea.Model, tea.Cmd) {
 	cur := m.mainPaneWidth()
 	m.splitDragging = true
+	m.splitDragSidebar = false
 	m.splitDragOff = x - cur
 	return m.applySplitDragX(x)
 }
@@ -52,12 +78,22 @@ func (m Model) handleSplitDrag(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.Type == tea.MouseRelease || msg.Action == tea.MouseActionRelease {
 		m.splitDragging = false
+		m.splitDragSidebar = false
 		return m, nil
 	}
 	return m, nil
 }
 
 func (m Model) applySplitDragX(x int) (tea.Model, tea.Cmd) {
+	if m.splitDragSidebar {
+		before := m.sidebarWidth()
+		m.sidebarSplitW = m.clampSidebarWidth(x - m.splitDragOff)
+		if m.sidebarWidth() != before {
+			m.invalidateDetailCache()
+			m.layoutExplorer()
+		}
+		return m, nil
+	}
 	before := m.mainPaneWidth()
 	m.mainPaneSplitW = m.clampMainPaneWidth(x - m.splitDragOff)
 	if m.mainPaneWidth() != before {
@@ -148,7 +184,7 @@ func (m Model) rightPaneGeom() (x, y, w, h int, ok bool) {
 	if m.width < 80 || m.height < 2 {
 		return 0, 0, 0, 0, false
 	}
-	x = m.mainPaneWidth()
+	x = m.sidebarWidth() + m.mainPaneWidth()
 	return x, 0, m.width - x, m.panesHeight(), true
 }
 
@@ -212,14 +248,38 @@ func (m Model) leftPaneGeom() (x, y, w, h int, ok bool) {
 	if m.width < 1 || m.height < 2 {
 		return 0, 0, 0, 0, false
 	}
-	if m.width < 80 && m.explorer.Opened() {
+	if m.width < 80 && (m.explorer.Opened() || m.sidebarNarrow()) {
 		return 0, 0, 0, 0, false
 	}
 	w = m.mainPaneWidth()
+	x = m.sidebarWidth()
 	if m.width < 80 {
+		x = 0
 		w = m.width
 	}
-	return 0, 0, w, m.panesHeight(), true
+	return x, 0, w, m.panesHeight(), true
+}
+
+func (m Model) sidebarPaneGeom() (x, y, w, h int, ok bool) {
+	if !m.sidebarShowing() || m.height < 2 {
+		return 0, 0, 0, 0, false
+	}
+	if m.sidebarNarrow() {
+		return 0, 0, m.width, m.panesHeight(), true
+	}
+	return 0, 0, m.sidebarWidth(), m.panesHeight(), true
+}
+
+func (m Model) handleSidebarClick(x, y int) (Model, bool) {
+	px, py, pw, ph, ok := m.sidebarPaneGeom()
+	if !ok {
+		return m, false
+	}
+	if x < px || x >= px+pw || y < py || y >= py+ph {
+		return m, false
+	}
+	innerY := y - py - 1
+	return m.applySidebarClick(innerY), true
 }
 
 func (m Model) mainGrid(width, height int) Grid {

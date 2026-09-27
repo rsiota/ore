@@ -31,7 +31,7 @@ fluid as following foreign keys in creel.
 └────────────────────┴──────────────────────────────────────────────────┴──────────────┘
 ```
 
-- **Sidebar** (`alt+b`): branches/tags, file tree, authors, bookmarks, search results
+- **Sidebar** (`alt+b`): file tree (first slot); later branches/tags, authors, bookmarks, search results
 - **Main area**: primary results grid
 - **Detail pane**: live diff, message, stats, line context
 - Status bar + command palette (`Ctrl+P`) + help (`?`) — creel-style
@@ -102,6 +102,7 @@ Analogous to creel’s FK explorer:
 
 ### Wave 4 — Polish & power
 
+- [x] File tree sidebar (`alt+b` / `:tree`) — path on-ramp into history / blame
 - [ ] Timeline / churn strip
 - [x] Session restore (repo + view + file + commit + pickaxe/evolve/hunks)
 - [x] Bookmarks / named views (commits, files, blame lines)
@@ -129,8 +130,9 @@ North star: make **line → previous versions → co-changed regions → authors
 10. [x] **Ownership → author commits** — `Enter` on an Ownership row (or `:authors`) lists that author's commits on those paths
 11. [x] **Honest scale** — commit window `500/N` + `:more` / `+` / `j` at end; the same grow path on history / pickaxe / couple / authors; session + bookmarks persist the extended windows; sample labels on Ownership / Often-with; capped titles; children hops invert the loaded log (then `hash..tip`, then a cached `--all`)
 12. [x] **Session restore for new modes** — pickaxe / couple / authors re-run on reopen; evolve restores origin blame then the stack; hunk strip persists; bookmarks share the snapshot
+13. [x] **File tree sidebar** — `alt+b` / `:tree` docks a lazy tree at the viewed tip; Enter opens history, `b` blames, `/` filters paths; session keeps open + width + path
 
-Later (when the above feels sticky): timeline strip, export provenance trail, large-repo caching. Keep AI/charts/PR links optional and thin.
+Later (when the above feels sticky): branches/tags in the sidebar, timeline strip, export provenance trail, large-repo caching. Keep AI/charts/PR links optional and thin.
 
 ---
 

@@ -62,12 +62,17 @@ type State struct {
 
 	// MainPaneWidth is the left pane outer width in cells (0 = default half).
 	MainPaneWidth int `json:"main_pane_width,omitempty"`
+
+	// Sidebar is the docked file-tree pane (alt+b).
+	Sidebar      bool   `json:"sidebar,omitempty"`
+	SidebarWidth int    `json:"sidebar_width,omitempty"`
+	SidebarPath  string `json:"sidebar_path,omitempty"`
 }
 
 // HasContent reports whether s is worth restoring.
 func (s State) HasContent() bool {
 	return s.Main != "" || s.Commit != "" || s.Path != "" || s.ViewRev != "" ||
-		s.PickQuery != "" || s.Author != "" || s.CoupleWith != ""
+		s.PickQuery != "" || s.Author != "" || s.CoupleWith != "" || s.Sidebar
 }
 
 // Store persists State per repository path as JSON under <configDir>/sessions/.

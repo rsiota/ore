@@ -105,6 +105,15 @@ func (m Model) snapshotSession() session.State {
 	if m.mainPaneSplitW > 0 {
 		st.MainPaneWidth = m.mainPaneSplitW
 	}
+	if m.sidebarOpen {
+		st.Sidebar = true
+		if m.sidebarSplitW > 0 {
+			st.SidebarWidth = m.sidebarSplitW
+		}
+		if p := m.tree.selectedPath(); p != "" {
+			st.SidebarPath = p
+		}
+	}
 	return st
 }
 
@@ -240,6 +249,9 @@ func sessionSummary(st session.State) string {
 	if st.Hunks {
 		parts = append(parts, "hunks")
 	}
+	if st.Sidebar {
+		parts = append(parts, "tree")
+	}
 	return strings.Join(parts, " · ")
 }
 
@@ -267,6 +279,13 @@ func (m *Model) applySessionChrome(st session.State) {
 	if st.MainPaneWidth > 0 {
 		m.mainPaneSplitW = st.MainPaneWidth
 	}
+	m.sidebarOpen = st.Sidebar
+	if st.SidebarWidth > 0 {
+		m.sidebarSplitW = st.SidebarWidth
+	}
+	if st.SidebarPath != "" {
+		m.tree.preferPath = st.SidebarPath
+	}
 	if (strings.EqualFold(st.Main, "blame") || strings.EqualFold(st.Main, "evolve")) &&
 		st.BlameGutterFold >= 0 && st.BlameGutterFold <= blameGutterFoldMax {
 		m.blameGutterFold = st.BlameGutterFold
@@ -283,41 +302,58 @@ func (m *Model) continueSessionRestore() tea.Cmd {
 	m.restoreCommitCursor(st.Commit)
 	m.status = "restoring session…"
 
+	var extra tea.Cmd
+	if m.sidebarOpen {
+		if st.SidebarPath != "" && m.tree.preferPath == "" {
+			m.tree.preferPath = st.SidebarPath
+		}
+		extra = m.ensureTreeLoaded()
+	}
+	wrap := func(c tea.Cmd) tea.Cmd {
+		if extra == nil {
+			return c
+		}
+		if c == nil {
+			return extra
+		}
+		return tea.Batch(extra, c)
+	}
+
 	switch strings.ToLower(st.Main) {
 	case "files":
 		m.restoreAfterFiles = true
 		m.openFilesPending = true
 		m.detailFilterPath = ""
 		m.loadingDetail = true
-		return m.reloadDetailNow()
+		return wrap(m.reloadDetailNow())
 	case "history":
 		if st.Path == "" {
 			m.clearSessionRestore()
-			return m.reloadDetail()
+			return wrap(m.reloadDetail())
 		}
 		m.restoreAfterHistory = true
-		return m.requestHistory(st.Path)
+		return wrap(m.requestHistory(st.Path))
 	case "blame", "evolve":
 		if st.Path == "" {
 			m.clearSessionRestore()
-			return m.reloadDetail()
+			return wrap(m.reloadDetail())
 		}
 		if strings.EqualFold(st.BlameFrom, "history") {
 			m.restoreAfterHistory = true
-			return m.requestHistory(st.Path)
+			return wrap(m.requestHistory(st.Path))
 		}
 		// files → blame stack (evolve continues after blame loads)
 		m.restoreAfterFiles = true
 		m.openFilesPending = true
 		m.detailFilterPath = ""
 		m.loadingDetail = true
-		return m.reloadDetailNow()
+		return wrap(m.reloadDetailNow())
 	case "pickaxe", "couple", "authors":
-		return m.startRestorePickaxe(*st)
+		return wrap(m.startRestorePickaxe(*st))
 	default:
 		m.clearSessionRestore()
 		m.refreshStatus()
-		return m.reloadDetail()
+		return wrap(m.reloadDetail())
 	}
 }
 

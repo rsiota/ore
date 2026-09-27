@@ -151,6 +151,14 @@ func exCommands() []exCmdSpec {
 			},
 		},
 		{
+			verbs: []string{"tree", "sidebar"},
+			desc:  "toggle the file tree sidebar",
+			usage: ":tree",
+			run: func(m *Model, _ []string) tea.Cmd {
+				return m.toggleSidebar()
+			},
+		},
+		{
 			verbs: []string{"hunks", "hunk"},
 			desc:  "toggle the bottom hunk list strip",
 			usage: ":hunks",

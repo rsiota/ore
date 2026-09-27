@@ -29,6 +29,12 @@ func TestExLookup(t *testing.T) {
 	if exLookup("more") == nil {
 		t.Fatal("expected :more")
 	}
+	if exLookup("tree") == nil {
+		t.Fatal("expected :tree")
+	}
+	if exLookup("sidebar") == nil {
+		t.Fatal("expected :sidebar alias")
+	}
 	if exLookup("author") == nil {
 		t.Fatal("expected :author alias")
 	}
@@ -76,7 +82,7 @@ func TestExCommandsListedInHelp(t *testing.T) {
 		rows.WriteByte('\n')
 	}
 	body := rows.String()
-	for _, want := range []string{":blame", ":history", ":goto", ":authors", ":branch", ":theme", ":set", ":session", ":refresh", ":more"} {
+	for _, want := range []string{":blame", ":history", ":goto", ":authors", ":branch", ":theme", ":set", ":session", ":refresh", ":more", ":tree"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("help missing %q", want)
 		}

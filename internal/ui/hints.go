@@ -43,6 +43,9 @@ func (m Model) hintSectionTitles() []string {
 	if m.focus == FocusHunks {
 		return []string{"Hunk list (H)", "Global"}
 	}
+	if m.focus == FocusSidebar {
+		return []string{"File tree (alt+b)", "Global"}
+	}
 	if m.focus == FocusDetail || m.focus == FocusBlameYank {
 		return []string{"Yank browser", "Global"}
 	}
@@ -134,7 +137,7 @@ func (m Model) hintDescActive() bool {
 
 // stageHintFlash records a pressed key for status-bar flash + description.
 func (m *Model) stageHintFlash(key string) {
-	hints := statusHintList(m.main, m.explorer.Opened())
+	hints := statusHintListFocus(m.main, m.explorer.Opened(), m.focus)
 	if matched := matchHint(hints, key); matched != "" {
 		m.hintFlash = matched
 		m.hintFlashAt = time.Now()

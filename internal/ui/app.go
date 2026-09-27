@@ -24,6 +24,7 @@ const (
 	FocusBlameYank
 	FocusHunks
 	FocusExplorer
+	FocusSidebar
 )
 
 // MainView is the left/main grid mode.
@@ -48,9 +49,15 @@ type Model struct {
 	main   MainView
 
 	// mainPaneSplitW is the outer left-pane width in cells (0 = default half).
-	mainPaneSplitW int
-	splitDragging  bool
-	splitDragOff   int
+	mainPaneSplitW   int
+	splitDragging    bool
+	splitDragSidebar bool
+	splitDragOff     int
+
+	sidebarOpen   bool
+	sidebarSplitW int // 0 = defaultSidebarWidth
+	tree          fileTree
+	loadingTree   bool
 
 	commits         []git.Commit
 	cursor          int
@@ -468,7 +475,11 @@ func loadRelExpandCmd(repo *git.Repo, hash, nodeID string) tea.Cmd {
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	return loadCommitsCmd(m.repo, m.viewRev, m.logLimit)
+	cmd := loadCommitsCmd(m.repo, m.viewRev, m.logLimit)
+	if m.sidebarOpen {
+		return tea.Batch(cmd, m.ensureTreeLoaded())
+	}
+	return cmd
 }
 
 // Update implements tea.Model.
@@ -555,6 +566,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dagJumpMsg:
 		return m.handleDagJumpMsg(msg)
+
+	case treeLoadedMsg:
+		return m.handleTreeLoaded(msg)
+
+	case treeFilesLoadedMsg:
+		return m.handleTreeFilesLoaded(msg)
 
 	case historyLoadedMsg:
 		m.loadingHistory = false
@@ -958,6 +975,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleExKeys(msg)
 	}
 
+	if m.tree.filterTyping {
+		return m.handleTreeFilterKeys(msg)
+	}
+
 	if m.filterTyping {
 		return m.handleFilterKeys(msg)
 	}
@@ -965,6 +986,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if _, ok := normalizePaneResizeKey(msg.String()); ok {
 		m.chordG = false
 		return m.resizePane(msg.String()), nil
+	}
+
+	if msg.String() == "alt+b" {
+		m.chordG = false
+		return m, m.toggleSidebar()
 	}
 
 	if m.focus == FocusExplorer && m.explorer.Opened() {
@@ -1119,6 +1145,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.refreshStatus()
 			return m, m.reloadDetail()
 		}
+		if m.focus == FocusSidebar {
+			if msg.String() == "esc" {
+				if m.tree.filter != "" || m.tree.filterTyping {
+					m.tree.filter = ""
+					m.tree.filterTyping = false
+					m.tree.clampCursor()
+					m.status = m.treeStatus()
+					return m, nil
+				}
+				m.focus = FocusMain
+				m.refreshStatus()
+				return m, nil
+			}
+			return m.handleSidebarKeys(tea.KeyMsg{Type: tea.KeyBackspace})
+		}
 		if m.filter != "" && msg.String() == "esc" {
 			m.clearFilter()
 			return m, nil
@@ -1129,6 +1170,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = ":█"
 		return m, nil
 	case "/":
+		if m.focus == FocusSidebar {
+			m.chordG = false
+			m.tree.filterTyping = true
+			m.status = m.treeFilterPrompt()
+			return m, nil
+		}
 		if m.focus == FocusMain {
 			m.chordG = false
 			m.filterTyping = true
@@ -1160,6 +1207,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleBlameYankKeys(msg)
 	case FocusHunks:
 		return m.handleHunkKeys(msg)
+	case FocusSidebar:
+		return m.handleSidebarKeys(msg)
 	}
 	return m, nil
 }
@@ -1167,16 +1216,27 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) cycleFocus() (tea.Model, tea.Cmd) {
 	if m.explorer.Opened() {
 		switch m.focus {
+		case FocusSidebar:
+			m.focus = FocusMain
 		case FocusMain:
 			m.focus = FocusExplorer
 		case FocusExplorer:
-			m.focus = FocusMain
+			if m.sidebarOpen {
+				m.focus = FocusSidebar
+				m.status = m.treeStatus()
+			} else {
+				m.focus = FocusMain
+			}
 		default:
 			m.focus = FocusMain
 		}
 		return m, nil
 	}
 	switch m.focus {
+	case FocusSidebar:
+		m.focus = FocusMain
+		m.refreshStatus()
+		return m, nil
 	case FocusMain:
 		if m.hunkMode {
 			m.rebuildDetailHunks()
@@ -1205,6 +1265,11 @@ func (m Model) cycleFocus() (tea.Model, tea.Cmd) {
 		m.enterDetailYank()
 	default:
 		m.leaveDetailYank()
+		if m.sidebarOpen {
+			m.focus = FocusSidebar
+			m.status = m.treeStatus()
+			return m, m.ensureTreeLoaded()
+		}
 	}
 	return m, nil
 }
@@ -2535,7 +2600,12 @@ func (m *Model) applyViewRev(ref git.Ref) tea.Cmd {
 	} else {
 		m.status = fmt.Sprintf("viewing %s…", m.viewRev)
 	}
-	return loadCommitsCmd(m.repo, m.viewRev, 0)
+	cmd := loadCommitsCmd(m.repo, m.viewRev, 0)
+	if m.sidebarOpen {
+		m.tree.reset(m.treeRev(), m.tree.selectedPath())
+		return tea.Batch(cmd, m.requestTree(""))
+	}
+	return cmd
 }
 
 // switchViewRev jumps to a named ref (or HEAD) without opening the picker.
@@ -2608,6 +2678,10 @@ func (m *Model) afterRefreshCmds() tea.Cmd {
 		if c := m.reloadRelationsCmd(); c != nil {
 			cmds = append(cmds, c)
 		}
+	}
+	if m.sidebarOpen {
+		m.tree.reset(m.treeRev(), m.tree.selectedPath())
+		cmds = append(cmds, m.requestTree(""))
 	}
 	switch len(cmds) {
 	case 0:
@@ -2726,6 +2800,13 @@ func (m Model) paneContentHeight() int {
 	return max(1, m.panesHeight()-borderOverhead)
 }
 
+func (m Model) splitRegionWidth() int {
+	if m.width < 80 {
+		return max(20, m.width)
+	}
+	return max(1, m.width-m.sidebarWidth())
+}
+
 func (m Model) mainPaneWidth() int {
 	if m.width < 80 {
 		return max(20, m.width)
@@ -2733,7 +2814,7 @@ func (m Model) mainPaneWidth() int {
 	if m.mainPaneSplitW > 0 {
 		return m.clampMainPaneWidth(m.mainPaneSplitW)
 	}
-	return m.clampMainPaneWidth(m.width / 2)
+	return m.clampMainPaneWidth(m.splitRegionWidth() / 2)
 }
 
 func (m Model) detailInnerWidth() int {
@@ -2924,6 +3005,9 @@ func (m Model) renderStatus() string {
 	if m.exTyping {
 		return fitWidth(styleFilter.Render(" :"+m.exLine+"█")+"  "+styleMuted.Render("enter run · esc cancel"), m.width)
 	}
+	if m.tree.filterTyping {
+		return fitWidth(styleFilter.Render(" "+m.treeFilterPrompt())+"  "+styleMuted.Render("enter keep · esc clear"), m.width)
+	}
 	if m.filterTyping {
 		return fitWidth(styleFilter.Render(" "+m.filterPrompt())+"  "+styleMuted.Render("enter keep · esc clear"), m.width)
 	}
@@ -2935,6 +3019,9 @@ func (m Model) renderStatus() string {
 		leftFocused = true
 	}
 	leftTab := renderStatusTab(leftTitle, leftFocused)
+	if m.sidebarOpen {
+		leftTab = renderStatusTab("tree", m.focus == FocusSidebar) + "  " + leftTab
+	}
 	rightTitle := "detail"
 	rightFocused := m.focus == FocusDetail
 	if m.focus == FocusDetail {
@@ -2962,7 +3049,7 @@ func (m Model) renderStatus() string {
 	// Detail reloads on every j/k; treating them as "busy" hides the right-hand
 	// key hints and makes the status bar flicker. Keep hints stable — the detail
 	// pane already holds the previous patch until the new one is ready.
-	busy := m.loading || m.loadingHistory || m.loadingBlame || m.loadingRel || m.loadingEvo || m.loadingPick
+	busy := m.loading || m.loadingHistory || m.loadingBlame || m.loadingRel || m.loadingEvo || m.loadingPick || m.loadingTree
 
 	var hints string
 	switch {
@@ -2996,6 +3083,11 @@ func (m Model) renderStatus() string {
 	if m.width < 80 {
 		if m.explorer.Opened() {
 			left = renderStatusTab(rightTitle, rightFocused)
+			if mid != "" {
+				left += " " + mid
+			}
+		} else if m.sidebarOpen && m.focus == FocusSidebar {
+			left = renderStatusTab("tree", true)
 			if mid != "" {
 				left += " " + mid
 			}
@@ -3049,12 +3141,14 @@ func (m Model) renderBody() string {
 		if m.explorer.Opened() {
 			m.explorer.SetSize(innerW, innerH)
 			panes = m.framePane(m.explorer.View(m.focus == FocusExplorer), m.width, h, FocusExplorer)
+		} else if m.sidebarNarrow() {
+			panes = m.framePane(m.renderSidebarPane(innerW, innerH), m.width, h, FocusSidebar)
 		} else {
 			panes = m.framePane(m.renderMainPane(innerW, innerH), m.width, h, FocusMain)
 		}
 	} else {
 		cw := m.mainPaneWidth()
-		dw := m.width - cw
+		dw := m.width - m.sidebarWidth() - cw
 		leftInner := max(1, cw-borderOverhead)
 		rightInner := max(1, dw-borderOverhead)
 		left := m.framePane(m.renderMainPane(leftInner, innerH), cw, h, FocusMain)
@@ -3065,7 +3159,14 @@ func (m Model) renderBody() string {
 		} else {
 			right = m.framePane(m.renderDetailPane(rightInner, innerH), dw, h, FocusDetail)
 		}
-		panes = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+		if m.sidebarDocked() {
+			sw := m.sidebarWidth()
+			sideInner := max(1, sw-borderOverhead)
+			side := m.framePane(m.renderSidebarPane(sideInner, innerH), sw, h, FocusSidebar)
+			panes = lipgloss.JoinHorizontal(lipgloss.Top, side, left, right)
+		} else {
+			panes = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+		}
 	}
 	if m.hunkMode {
 		if m.hunks == nil {
