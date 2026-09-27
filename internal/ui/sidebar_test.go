@@ -47,6 +47,20 @@ func TestSidebarLayoutLeavesRoomForMainAndDetail(t *testing.T) {
 	}
 }
 
+func TestDetailInnerWidthAccountsForSidebar(t *testing.T) {
+	m := Model{width: 120, height: 30, sidebarOpen: true}
+	dw := m.width - m.sidebarWidth() - m.mainPaneWidth()
+	want := max(1, dw-borderOverhead)
+	if got := m.detailInnerWidth(); got != want {
+		t.Fatalf("detailInnerWidth=%d want %d", got, want)
+	}
+	closed := Model{width: 120, height: 30}
+	wantClosed := max(1, closed.width-closed.mainPaneWidth()-borderOverhead)
+	if got := closed.detailInnerWidth(); got != wantClosed {
+		t.Fatalf("closed detailInnerWidth=%d want %d", got, wantClosed)
+	}
+}
+
 func TestResizeSidebarWhenFocused(t *testing.T) {
 	m := Model{width: 120, height: 30, sidebarOpen: true, focus: FocusSidebar}
 	before := m.sidebarWidth()

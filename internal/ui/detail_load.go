@@ -14,7 +14,7 @@ const (
 	detailDebounce     = 75 * time.Millisecond
 	detailLoadTimeout  = 30 * time.Second
 	maxDiffBytes       = 512 << 10 // soft-cap raw patch payload (~512KiB)
-	maxDetailBodyLines = 6000     // soft-cap logical detail rows after parse
+	maxDetailBodyLines = 6000      // soft-cap logical detail rows after parse
 )
 
 type detailDebounceMsg struct {
@@ -35,6 +35,9 @@ type detailPatchMsg struct {
 	path      string
 	diff      string
 	truncated bool
+	logical   []string
+	visual    []string
+	width     int
 	err       error
 }
 
@@ -155,6 +158,8 @@ func (m *Model) continueDetailPatch(hash, path string) tea.Cmd {
 	}
 	unified := m.zenContext
 	repo := m.repo
+	snap := *m
+	pending := m.detailPending
 	return func() tea.Msg {
 		diff, err := repo.ShowPatch(ctx, hash, path, unified)
 		if ctx.Err() != nil {
@@ -164,7 +169,21 @@ func (m *Model) continueDetailPatch(hash, path string) tea.Cmd {
 		if err == nil {
 			diff, truncated = truncateDiff(diff)
 		}
-		return detailPatchMsg{seq: seq, hash: hash, path: path, diff: diff, truncated: truncated, err: err}
+		msg := detailPatchMsg{seq: seq, hash: hash, path: path, diff: diff, truncated: truncated, err: err}
+		if err != nil || pending == nil {
+			return msg
+		}
+		d := *pending
+		d.Diff = diff
+		snap.detail = &d
+		snap.detailPath = path
+		snap.detailTruncated = truncated
+		msg.logical = snap.buildDetailLogical()
+		msg.width = snap.detailInnerWidth()
+		if snap.detailWrap {
+			msg.visual = snap.expandDetailRows(msg.logical, msg.width, true)
+		}
+		return msg
 	}
 }
 
@@ -274,9 +293,10 @@ func (m *Model) handleDetailPatch(msg detailPatchMsg) (tea.Model, tea.Cmd) {
 	m.detailPatchPending = false
 	m.loadingDetail = false
 	m.detailExpectHash = ""
-	m.invalidateDetailCache()
-	if m.hunkMode {
-		m.rebuildDetailHunks()
+	width := msg.width
+	if width < 1 {
+		width = m.detailInnerWidth()
 	}
+	m.installDetailCache(width, msg.logical, msg.visual)
 	return *m, nil
 }

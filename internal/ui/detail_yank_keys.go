@@ -7,6 +7,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type yankCopiedMsg struct {
@@ -15,7 +16,98 @@ type yankCopiedMsg struct {
 }
 
 func (m Model) detailYankLines() []string {
-	return plainDetailLines(m.detailVisualLines())
+	n := m.detailVisualCount()
+	out := make([]string, n)
+	for i := 0; i < n; i++ {
+		out[i] = m.plainDetailAt(i)
+	}
+	return out
+}
+
+// detailYankMotionLines fills only the rows a local motion can touch.
+// j/k must not restyle or ANSI-strip the entire patch.
+func (m Model) detailYankMotionLines(radius int) []string {
+	n := m.detailVisualCount()
+	out := make([]string, n)
+	if n == 0 {
+		return out
+	}
+	if radius < 1 {
+		radius = 1
+	}
+	lo := max(0, m.yank.row-radius)
+	hi := min(n, m.yank.row+radius+1)
+	for i := lo; i < hi; i++ {
+		out[i] = m.plainDetailAt(i)
+	}
+	out[0] = m.plainDetailAt(0)
+	out[n-1] = m.plainDetailAt(n - 1)
+	return out
+}
+
+func (m Model) detailYankLinesForKey(msg tea.KeyMsg) []string {
+	if detailYankNeedsFullLines(msg, m.yank) {
+		return m.detailYankLines()
+	}
+	radius := 2
+	switch msg.String() {
+	case "ctrl+d", "ctrl+u":
+		radius = max(1, m.detailViewHeight()) + 1
+	}
+	return m.detailYankMotionLines(radius)
+}
+
+func detailYankNeedsFullLines(msg tea.KeyMsg, y detailYank) bool {
+	if y.searchTyping || y.pendingFind || y.pending == yankPendingY || y.visual != yankVisualNone {
+		return true
+	}
+	switch msg.String() {
+	case "w", "b", "e", "/", "n", "N", "y", "Y":
+		return true
+	}
+	return false
+}
+
+func (m Model) styledDetailAt(i int) string {
+	width := m.detailInnerWidth()
+	body := m.ensureDetailLogical(width)
+	if m.detailWrap {
+		vis := m.ensureDetailVisual(width, body)
+		if i < 0 || i >= len(vis) {
+			return ""
+		}
+		return vis[i]
+	}
+	if i < 0 || i >= len(body) {
+		return ""
+	}
+	rows := m.renderDetailRows(body[i], width, false)
+	if len(rows) == 0 {
+		return ""
+	}
+	return rows[0]
+}
+
+func (m Model) plainDetailAt(i int) string {
+	n := m.detailVisualCount()
+	if i < 0 || i >= n {
+		return ""
+	}
+	if m.detailCache != nil {
+		if m.detailCache.plain == nil || len(m.detailCache.plain) != n {
+			m.detailCache.plain = make([]string, n)
+			m.detailCache.plainOK = make([]bool, n)
+		}
+		if m.detailCache.plainOK[i] {
+			return m.detailCache.plain[i]
+		}
+	}
+	p := ansi.Strip(m.styledDetailAt(i))
+	if m.detailCache != nil && i < len(m.detailCache.plain) {
+		m.detailCache.plain[i] = p
+		m.detailCache.plainOK[i] = true
+	}
+	return p
 }
 
 func (m *Model) enterDetailYank() {
@@ -27,12 +119,45 @@ func (m *Model) enterDetailYank() {
 }
 
 func (m *Model) enterDetailYankAt(row, col int) {
-	lines := m.detailYankLines()
+	// Don't expand the whole patch just to land the cursor — that is what
+	// made Tab into detail hitch on large commits. Motions that need every
+	// line still go through detailYankLines (now cached).
+	if row < 0 {
+		row = 0
+	}
+	if col < 0 {
+		col = 0
+	}
 	m.yank.reset()
-	m.yank.row, m.yank.col = clampYankPos(lines, row, col)
+	m.yank.row, m.yank.col = row, col
 	m.focus = FocusDetail
 	m.ensureYankVisible(m.detailViewHeight())
 	m.status = "detail · " + m.yank.modeLabel()
+}
+
+// renderDetailYankWindow paints only the visible slice with the yank overlay.
+// The unfocused pane already uses a viewport; Tab must not restyle the
+// entire patch just to draw a block cursor.
+func (m Model) renderDetailYankWindow(width, height int) string {
+	h := height
+	if h < 1 {
+		h = 1
+	}
+	styled, total := m.detailVisualWindow(width, h, m.detailOffset)
+	offset := m.detailOffset
+	if offset > max(0, total-1) {
+		offset = max(0, total-1)
+	}
+	plains := plainDetailLines(styled)
+	rows := make([]string, 0, h)
+	for i, s := range styled {
+		p := ""
+		if i < len(plains) {
+			p = plains[i]
+		}
+		rows = append(rows, paintYankOnStyled(s, p, width, offset+i, m.yank))
+	}
+	return padPane(rows, width, height)
 }
 
 func (m *Model) leaveDetailYank() {
@@ -90,11 +215,14 @@ func (m *Model) commitYank(text string, flash detailYank) tea.Cmd {
 // jumpDetailHunk moves to the previous (dir<0) or next (dir>0) diff hunk header
 // in the detail pane. Bound to [ / ] (and { / }) while FocusDetail.
 func (m *Model) jumpDetailHunk(dir int) tea.Cmd {
-	lines := m.detailYankLines()
-	hunks := detailHunkRows(lines)
-	if len(hunks) == 0 {
+	m.rebuildDetailHunks()
+	if len(m.hunks) == 0 {
 		m.status = "detail · no hunks"
 		return nil
+	}
+	hunks := make([]int, len(m.hunks))
+	for i, h := range m.hunks {
+		hunks[i] = h.Row
 	}
 	viewH := max(1, m.detailViewHeight())
 	cur := m.yank.row
@@ -115,7 +243,7 @@ func (m *Model) jumpDetailHunk(dir int) tea.Cmd {
 			return nil
 		}
 	}
-	m.yank.row, m.yank.col = clampYankPos(lines, row, 0)
+	m.yank.row, m.yank.col = row, 0
 	m.ensureYankVisible(viewH)
 	ord := hunkOrdinal(hunks, m.yank.row)
 	m.status = fmt.Sprintf("detail · hunk %d/%d", ord, len(hunks))
@@ -140,7 +268,7 @@ type yankBrowserOpts struct {
 func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleYankBrowserKeys(msg, yankBrowserOpts{
 		prefix:    "detail",
-		lines:     m.detailYankLines(),
+		lines:     m.detailYankLinesForKey(msg),
 		viewH:     max(1, m.detailViewHeight()),
 		allowHunk: true,
 		leave:     (*Model).leaveDetailYank,

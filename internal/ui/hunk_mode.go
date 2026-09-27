@@ -30,39 +30,88 @@ func hunkStripOuterHeight() int {
 // collectDetailHunks builds the hunk list from painted detail rows, attaching
 // file paths from the logical body in hunk order.
 func collectDetailHunks(visualPlain []string, logical []string) []detailHunk {
-	var logFiles []string
-	file := ""
-	for _, line := range logical {
-		raw := ansi.Strip(line)
-		switch {
-		case strings.HasPrefix(line, zenFilePrefix):
-			file = strings.TrimPrefix(line, zenFilePrefix)
-		case strings.HasPrefix(line, "diff --git "):
-			file = diffGitPath(line)
-		case strings.HasPrefix(line, zenHunkPrefix):
-			logFiles = append(logFiles, file)
-		case strings.HasPrefix(strings.TrimSpace(raw), "@@"):
-			logFiles = append(logFiles, file)
-		}
-	}
-
+	logFiles := hunkFilesFromLogical(logical)
 	var out []detailHunk
 	for i, line := range visualPlain {
 		plain := strings.TrimSpace(line)
 		if !strings.HasPrefix(plain, "@@") {
 			continue
 		}
-		title := plain
-		if runewidth.StringWidth(title) > 72 {
-			title = runewidth.Truncate(title, 72, "…")
-		}
-		f := ""
-		if len(out) < len(logFiles) {
-			f = logFiles[len(out)]
-		}
-		out = append(out, detailHunk{Row: i, Title: title, File: f})
+		out = append(out, detailHunk{
+			Row:   i,
+			Title: truncateHunkTitle(plain),
+			File:  hunkFileAt(logFiles, len(out)),
+		})
 	}
 	return out
+}
+
+// collectDetailHunksFromLogical finds @@ headers without painting the patch.
+// Wrap-off visual rows are 1:1 with logical rows.
+func collectDetailHunksFromLogical(logical []string) []detailHunk {
+	file := ""
+	var out []detailHunk
+	for i, line := range logical {
+		raw := ansi.Strip(line)
+		trimmed := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(line, zenFilePrefix):
+			file = strings.TrimPrefix(line, zenFilePrefix)
+		case strings.HasPrefix(trimmed, "diff --git "):
+			file = diffGitPath(trimmed)
+		}
+		title, ok := logicalHunkTitle(line, raw)
+		if !ok {
+			continue
+		}
+		out = append(out, detailHunk{Row: i, Title: truncateHunkTitle(title), File: file})
+	}
+	return out
+}
+
+func hunkFilesFromLogical(logical []string) []string {
+	var logFiles []string
+	file := ""
+	for _, line := range logical {
+		raw := ansi.Strip(line)
+		trimmed := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(line, zenFilePrefix):
+			file = strings.TrimPrefix(line, zenFilePrefix)
+		case strings.HasPrefix(trimmed, "diff --git "):
+			file = diffGitPath(trimmed)
+		case strings.HasPrefix(line, zenHunkPrefix):
+			logFiles = append(logFiles, file)
+		case strings.HasPrefix(trimmed, "@@"):
+			logFiles = append(logFiles, file)
+		}
+	}
+	return logFiles
+}
+
+func hunkFileAt(files []string, i int) string {
+	if i < len(files) {
+		return files[i]
+	}
+	return ""
+}
+
+func logicalHunkTitle(line, raw string) (string, bool) {
+	if strings.HasPrefix(line, zenHunkPrefix) {
+		return strings.TrimPrefix(line, zenHunkPrefix), true
+	}
+	s := strings.TrimSpace(raw)
+	if strings.HasPrefix(s, "@@") {
+		return s, true
+	}
+	return "", false
+}
+
+func truncateHunkTitle(title string) string {
+	if runewidth.StringWidth(title) > 72 {
+		return runewidth.Truncate(title, 72, "…")
+	}
+	return title
 }
 
 func diffGitPath(line string) string {
@@ -80,8 +129,12 @@ func diffGitPath(line string) string {
 func (m *Model) rebuildDetailHunks() {
 	width := m.detailInnerWidth()
 	logical := m.ensureDetailLogical(width)
-	visual := m.detailYankLines()
-	m.hunks = collectDetailHunks(visual, logical)
+	if m.detailWrap {
+		visual := m.ensureDetailVisual(width, logical)
+		m.hunks = collectDetailHunks(plainDetailLines(visual), logical)
+	} else {
+		m.hunks = collectDetailHunksFromLogical(logical)
+	}
 	if m.hunkCursor >= len(m.hunks) {
 		m.hunkCursor = max(0, len(m.hunks)-1)
 	}
@@ -148,8 +201,7 @@ func (m *Model) selectHunk(i int) tea.Cmd {
 	h := m.hunks[i]
 	m.detailOffset = h.Row
 	if m.focus == FocusDetail {
-		lines := m.detailYankLines()
-		m.yank.row, m.yank.col = clampYankPos(lines, h.Row, 0)
+		m.yank.row, m.yank.col = h.Row, 0
 		m.ensureYankVisible(max(1, m.detailViewHeight()))
 	}
 	m.status = fmtHunkStatus(i, len(m.hunks), h)

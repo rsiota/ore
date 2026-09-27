@@ -10,17 +10,19 @@ const detailViewOverscan = 32
 type detailRenderCache struct {
 	key     string
 	logical []string
-	visual  []string // fully expanded when wrap is on
+	visual  []string // fully expanded (wrap-on only, or after a full yank walk)
+	plain   []string // ansi-stripped rows; filled lazily per index
+	plainOK []bool
 }
 
 func (m *Model) invalidateDetailCache() {
 	if m.detailCache == nil {
 		m.detailCache = &detailRenderCache{}
-		return
+	} else {
+		*m.detailCache = detailRenderCache{}
 	}
-	*m.detailCache = detailRenderCache{}
 	if m.hunkMode {
-		m.hunks = nil // rebuild on next select/jump/toggle paint path
+		m.rebuildDetailHunks()
 	}
 }
 
@@ -40,6 +42,15 @@ func (m Model) detailRenderKey(width int) string {
 		m.detailTruncated, diffLen, hl, m.pickQuery, m.pickMode)
 }
 
+func (m Model) buildDetailLogical() []string {
+	body := m.detailLines()
+	if m.detailTruncated && m.detail != nil && m.detail.Diff != "" {
+		body = append(body, styleMuted.Render(strings.Repeat(" ", cellPad)+
+			"… patch truncated for speed (path-filter or smaller commit for full)"))
+	}
+	return clampDetailBody(body)
+}
+
 func (m Model) ensureDetailLogical(width int) []string {
 	if m.detailCache == nil {
 		m.detailCache = &detailRenderCache{}
@@ -48,16 +59,33 @@ func (m Model) ensureDetailLogical(width int) []string {
 	if m.detailCache.key == key && m.detailCache.logical != nil {
 		return m.detailCache.logical
 	}
-	body := m.detailLines()
-	if m.detailTruncated && m.detail != nil && m.detail.Diff != "" {
-		body = append(body, styleMuted.Render(strings.Repeat(" ", cellPad)+
-			"… patch truncated for speed (path-filter or smaller commit for full)"))
-	}
-	body = clampDetailBody(body)
+	body := m.buildDetailLogical()
 	m.detailCache.key = key
 	m.detailCache.logical = body
 	m.detailCache.visual = nil
+	m.detailCache.plain = nil
+	m.detailCache.plainOK = nil
 	return body
+}
+
+func (m *Model) installDetailCache(width int, logical, visual []string) {
+	if m.detailCache == nil {
+		m.detailCache = &detailRenderCache{}
+	} else {
+		*m.detailCache = detailRenderCache{}
+	}
+	if logical == nil {
+		if m.hunkMode {
+			m.rebuildDetailHunks()
+		}
+		return
+	}
+	m.detailCache.key = m.detailRenderKey(width)
+	m.detailCache.logical = logical
+	m.detailCache.visual = visual
+	if m.hunkMode {
+		m.rebuildDetailHunks()
+	}
 }
 
 func clampDetailBody(body []string) []string {
@@ -111,7 +139,9 @@ func (m Model) ensureDetailVisual(width int, body []string) []string {
 	if m.detailCache.visual != nil && m.detailCache.key == m.detailRenderKey(width) {
 		return m.detailCache.visual
 	}
-	visual := m.expandDetailRows(body, width, true)
+	visual := m.expandDetailRows(body, width, m.detailWrap)
 	m.detailCache.visual = visual
+	m.detailCache.plain = nil
+	m.detailCache.plainOK = nil
 	return visual
 }

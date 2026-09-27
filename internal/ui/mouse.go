@@ -224,21 +224,23 @@ func (m Model) applyDetailClick(innerX, innerY int) Model {
 	if m.focus == FocusBlameYank {
 		m.leaveBlameYank()
 	}
-	lines := m.detailYankLines()
+	n := m.detailVisualCount()
 	row := m.detailOffset + innerY
-	if len(lines) == 0 || row < 0 || row >= len(lines) {
+	if n == 0 || row < 0 || row >= n {
 		if m.focus != FocusDetail {
 			m.enterDetailYank()
 		}
 		return m
 	}
-	col := runeIndexAtDisplayCol(lines[row], innerX)
+	plain := m.plainDetailAt(row)
+	col := runeIndexAtDisplayCol(plain, innerX)
 	if m.focus != FocusDetail {
 		m.enterDetailYankAt(row, col)
 		return m
 	}
 	m.yank.searchTyping = false
-	m.yank.row, m.yank.col = clampYankPos(lines, row, col)
+	m.yank.row, m.yank.col = clampYankPos([]string{plain}, 0, col)
+	m.yank.row = row
 	m.ensureYankVisible(m.detailViewHeight())
 	m.status = "detail · " + m.yank.modeLabel()
 	return m

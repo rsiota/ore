@@ -145,6 +145,7 @@ type Model struct {
 	detailCancel       context.CancelFunc
 	detailCtx          context.Context
 	detailCache        *detailRenderCache // pointer so View (value recv) can memoize
+	commitRowsCache    *commitRowsCache   // graph+rows; rebuilt when the log identity changes
 	loading            bool
 	loadingDetail      bool
 	err                string
@@ -229,24 +230,25 @@ func New(repo *git.Repo) Model {
 	store := session.NewStore(configDir)
 	bmStore := bookmarks.NewStore(configDir)
 	m := Model{
-		repo:           repo,
-		focus:          FocusMain,
-		main:           MainCommits,
-		loading:        true,
-		status:         "loading commits…",
-		commitSortCol:  -1,
-		commitCol:      commitColHash,
-		fileSortCol:    -1,
-		historySortCol: -1,
-		blameSortCol:   -1,
-		diffMode:       DiffZen,
-		zenContext:     defaultZenContext,
-		detailCache:    &detailRenderCache{},
-		theme:          activeThemeName,
-		transparentBg:  cfg.TransparentBackground,
-		config:         cfg,
-		sessionStore:   store,
-		bookmarkStore:  bmStore,
+		repo:            repo,
+		focus:           FocusMain,
+		main:            MainCommits,
+		loading:         true,
+		status:          "loading commits…",
+		commitSortCol:   -1,
+		commitCol:       commitColHash,
+		fileSortCol:     -1,
+		historySortCol:  -1,
+		blameSortCol:    -1,
+		diffMode:        DiffZen,
+		zenContext:      defaultZenContext,
+		detailCache:     &detailRenderCache{},
+		commitRowsCache: &commitRowsCache{},
+		theme:           activeThemeName,
+		transparentBg:   cfg.TransparentBackground,
+		config:          cfg,
+		sessionStore:    store,
+		bookmarkStore:   bmStore,
 	}
 	if st, err := store.Load(repo.Path); err == nil && st.HasContent() {
 		cp := st
@@ -2762,7 +2764,7 @@ func (m Model) detailInnerWidth() int {
 	if m.width < 80 {
 		return max(1, m.width-borderOverhead)
 	}
-	dw := m.width - m.mainPaneWidth()
+	dw := m.width - m.sidebarWidth() - m.mainPaneWidth()
 	return max(1, dw-borderOverhead)
 }
 
@@ -2770,10 +2772,7 @@ func (m Model) detailInnerWidth() int {
 func (m Model) detailVisualLines() []string {
 	width := m.detailInnerWidth()
 	body := m.ensureDetailLogical(width)
-	if m.detailWrap {
-		return m.ensureDetailVisual(width, body)
-	}
-	return m.expandDetailRows(body, width, false)
+	return m.ensureDetailVisual(width, body)
 }
 
 func (m Model) detailVisualCount() int {
@@ -3110,9 +3109,6 @@ func (m Model) renderBody() string {
 		}
 	}
 	if m.hunkMode {
-		if m.hunks == nil {
-			m.rebuildDetailHunks()
-		}
 		strip := m.renderHunkStrip(m.width, hunkStripOuterHeight())
 		return lipgloss.JoinVertical(lipgloss.Left, panes, strip)
 	}
@@ -3185,12 +3181,38 @@ func (m Model) renderCommitPane(width, height int) string {
 	return m.commitGrid(width, height).View()
 }
 
+type commitRowsCache struct {
+	key  string
+	rows [][]string
+}
+
+func (m Model) commitRowsCacheKey() string {
+	n := len(m.commits)
+	head, tail := "", ""
+	if n > 0 {
+		head = m.commits[0].Hash
+		tail = m.commits[n-1].Hash
+	}
+	return fmt.Sprintf("%d|%s|%s|%q|%d|%d|%d", n, head, tail, m.filter, m.commitFilterCol, m.commitSortCol, m.commitSortDir)
+}
+
 func (m Model) commitGrid(width, height int) Grid {
 	idx := m.commitIndices()
-	graphs := commitGraphLines(m.commits, idx, m.commitSortDir)
-	rows := make([][]string, len(idx))
-	for i, src := range idx {
-		rows[i] = commitRow(m.commits[src], graphs[i])
+	key := m.commitRowsCacheKey()
+	var rows [][]string
+	if m.commitRowsCache != nil && m.commitRowsCache.key == key && len(m.commitRowsCache.rows) == len(idx) {
+		rows = m.commitRowsCache.rows
+	} else {
+		graphs := commitGraphLines(m.commits, idx, m.commitSortDir)
+		rows = make([][]string, len(idx))
+		for i, src := range idx {
+			rows[i] = commitRow(m.commits[src], graphs[i])
+		}
+		if m.commitRowsCache == nil {
+			m.commitRowsCache = &commitRowsCache{}
+		}
+		m.commitRowsCache.key = key
+		m.commitRowsCache.rows = rows
 	}
 	g := Grid{
 		Columns:    commitColumns,
@@ -3450,23 +3472,7 @@ func (m Model) renderDetailPane(width, height int) string {
 		h = 1
 	}
 	if m.focus == FocusDetail {
-		all := m.detailVisualLines()
-		plain := plainDetailLines(all)
-		total := len(all)
-		offset := m.detailOffset
-		if offset > max(0, total-1) {
-			offset = max(0, total-1)
-		}
-		end := min(total, offset+h)
-		rows := make([]string, 0, h)
-		for i := offset; i < end; i++ {
-			p := ""
-			if i < len(plain) {
-				p = plain[i]
-			}
-			rows = append(rows, paintYankOnStyled(all[i], p, width, i, m.yank))
-		}
-		return padPane(rows, width, height)
+		return m.renderDetailYankWindow(width, height)
 	}
 	lines, _ := m.detailVisualWindow(width, h, m.detailOffset)
 	return padPane(lines, width, height)

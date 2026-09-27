@@ -60,6 +60,106 @@ func TestYankSearch(t *testing.T) {
 	}
 }
 
+func TestEnterDetailYankDoesNotExpandPatch(t *testing.T) {
+	m := Model{
+		focus:       FocusMain,
+		width:       120,
+		height:      30,
+		detailCache: &detailRenderCache{},
+		detail: &git.CommitDetail{
+			Commit: git.Commit{Hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ShortHash: "aaaaaaa", Subject: "subj"},
+			Diff:   strings.Repeat("+line\n", 400),
+		},
+		diffMode: DiffZen,
+	}
+	m.enterDetailYank()
+	if m.focus != FocusDetail {
+		t.Fatal("expected FocusDetail")
+	}
+	if m.detailCache.visual != nil || m.detailCache.plain != nil {
+		t.Fatal("Tab into detail should not expand the whole patch")
+	}
+	body := m.renderDetailPane(40, 10)
+	if body == "" {
+		t.Fatal("expected a viewport paint")
+	}
+	if m.detailCache.visual != nil {
+		t.Fatal("viewport paint should not force a full visual cache")
+	}
+}
+
+func TestDetailCursorMotionDoesNotExpandPatch(t *testing.T) {
+	m := Model{
+		focus:       FocusMain,
+		width:       120,
+		height:      30,
+		sidebarOpen: true,
+		detailCache: &detailRenderCache{},
+		detail: &git.CommitDetail{
+			Commit: git.Commit{Hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ShortHash: "aaaaaaa", Subject: "subj"},
+			Diff:   strings.Repeat("+line\n", 400),
+		},
+		diffMode: DiffUnified,
+	}
+	m.enterDetailYank()
+	_ = m.renderDetailPane(m.detailInnerWidth(), 10)
+	if m.detailCache.visual != nil {
+		t.Fatal("viewport paint should not expand visual")
+	}
+	mm, _ := m.handleDetailKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = mm.(Model)
+	if m.yank.row != 1 {
+		t.Fatalf("j row=%d", m.yank.row)
+	}
+	if m.detailCache.visual != nil {
+		t.Fatal("j should not restyle the whole patch")
+	}
+	mm, _ = m.handleDetailKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = mm.(Model)
+	if m.yank.row != 2 {
+		t.Fatalf("jj row=%d", m.yank.row)
+	}
+	if m.detailCache.visual != nil {
+		t.Fatal("repeat j should not expand visual")
+	}
+}
+
+func TestCommitJDoesNotExpandDetail(t *testing.T) {
+	m := Model{
+		focus:  FocusMain,
+		main:   MainCommits,
+		width:  120,
+		height: 30,
+		commits: []git.Commit{
+			{Hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ShortHash: "aaaaaaa", Subject: "a"},
+			{Hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ShortHash: "bbbbbbb", Subject: "b"},
+		},
+		detailCache: &detailRenderCache{},
+		detail: &git.CommitDetail{
+			Commit: git.Commit{Hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ShortHash: "aaaaaaa", Subject: "a"},
+			Diff:   strings.Repeat("+line\n", 400),
+		},
+		diffMode: DiffUnified,
+	}
+	m.enterDetailYank()
+	mm, _ := m.handleDetailKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = mm.(Model)
+	mm, _ = m.handlePaneNav("tab")
+	m = mm.(Model)
+	if m.focus != FocusMain {
+		t.Fatalf("tab from detail → main, got %v", m.focus)
+	}
+	mm, _ = m.handleCommitKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = mm.(Model)
+	if m.cursor != 1 {
+		t.Fatalf("commit j cursor=%d", m.cursor)
+	}
+	_ = m.renderDetailPane(m.detailInnerWidth(), 10)
+	if m.detailCache.visual != nil {
+		t.Fatal("commit j should not restyle the whole patch")
+	}
+}
+
 func TestEnterLeaveDetailYank(t *testing.T) {
 	m := Model{
 		focus:       FocusMain,

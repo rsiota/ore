@@ -145,3 +145,32 @@ func TestDetailPatchAppliesAfterHeader(t *testing.T) {
 		t.Fatal("detail should swap atomically with patch")
 	}
 }
+
+func TestDetailPatchInstallsPrecomputedLogical(t *testing.T) {
+	m := Model{
+		width:            120,
+		height:           30,
+		commits:          []git.Commit{{Hash: "abcabcabc", ShortHash: "abcabca"}},
+		cursor:           0,
+		detailFilterPath: "",
+		detailLoadSeq:    1,
+		detailPending:    &git.CommitDetail{Commit: git.Commit{Hash: "abcabcabc", Subject: "hi"}},
+		detailCache:      &detailRenderCache{},
+	}
+	body := []string{"precomputed-row"}
+	next, _ := m.Update(detailPatchMsg{
+		seq:     1,
+		hash:    "abcabcabc",
+		diff:    "+x\n",
+		logical: body,
+		width:   m.detailInnerWidth(),
+	})
+	mm := next.(Model)
+	got := mm.ensureDetailLogical(mm.detailInnerWidth())
+	if len(got) != 1 || got[0] != "precomputed-row" {
+		t.Fatalf("expected precomputed logical, got %#v", got)
+	}
+	if mm.detailCache.visual != nil {
+		t.Fatal("wrap-off patch should not expand visual")
+	}
+}

@@ -8,6 +8,60 @@ import (
 	"github.com/rsiota/ore/internal/git"
 )
 
+func TestCollectDetailHunksFromLogical(t *testing.T) {
+	logical := []string{
+		zenFilePrefix + "pkg/a.go",
+		zenHunkPrefix + "@@ -1,2 +1,3 @@ top",
+		zenAddPrefix + "1\x1fhi",
+		"  @@ -10 +10 @@ bottom",
+	}
+	hunks := collectDetailHunksFromLogical(logical)
+	if len(hunks) != 2 {
+		t.Fatalf("hunks=%#v", hunks)
+	}
+	if hunks[0].Row != 1 || hunks[1].Row != 3 {
+		t.Fatalf("rows=%d,%d", hunks[0].Row, hunks[1].Row)
+	}
+	if hunks[0].File != "pkg/a.go" {
+		t.Fatalf("file=%q", hunks[0].File)
+	}
+}
+
+func TestRebuildHunksDoesNotExpandPatch(t *testing.T) {
+	diff := strings.Join([]string{
+		"diff --git a/f b/f",
+		"--- a/f",
+		"+++ b/f",
+		"@@ -1,2 +1,2 @@ top",
+		" a",
+		"-b",
+		"+B",
+		"@@ -20,2 +20,2 @@ bottom",
+		" c",
+		"-d",
+		"+D",
+	}, "\n")
+	m := Model{
+		width:       120,
+		height:      40,
+		diffMode:    DiffZen,
+		zenContext:  3,
+		hunkMode:    true,
+		detailCache: &detailRenderCache{},
+		detail: &git.CommitDetail{
+			Commit: git.Commit{Hash: "h", Subject: "s", Files: 1},
+			Diff:   diff,
+		},
+	}
+	m.rebuildDetailHunks()
+	if len(m.hunks) < 2 {
+		t.Fatalf("hunks=%d", len(m.hunks))
+	}
+	if m.detailCache.visual != nil {
+		t.Fatal("wrap-off hunk scan should not restyle the patch")
+	}
+}
+
 func TestCollectDetailHunks(t *testing.T) {
 	logical := []string{
 		zenFilePrefix + "pkg/a.go",
